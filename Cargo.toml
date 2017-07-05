@@ -1,0 +1,21 @@
+[package]
+name = "extfsm"
+description="Extended Final State Machine with internal event queue and entry/exit transitions"
+version = "0.5.0"
+authors = ["prz@juniper.net <prz@juniper.net>"]
+readme = "README.md"
+keywords = [ "fsm" ]
+license-file = "LICENSE"
+repository = "https://github.com/przygienda/rust-extfsm.git"
+
+[dependencies]
+slog="1.5.*"
+slog-term="1.5.*"
+slog-atomic="0.4.*"
+slog-stream="*"
+dot = "*"
+uuid = { version = "*", features = ["v4"] }
+custom_derive = "*"
+enum_derive = "*"
+
+[features]
