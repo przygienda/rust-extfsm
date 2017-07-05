@@ -40,7 +40,5 @@ after_success:
 
 env:
   global:
-    # override the default `--features unstable` used for the nightly branch (optional)
-    - TRAVIS_CARGO_NIGHTLY_FEATURE=nightly
     # encrypted github token for doc upload (see `GH_TOKEN` link above)
     - secure: "8f840401ddddc64cd85022b4116f9630f8f41a65"
