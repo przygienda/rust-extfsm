@@ -2,6 +2,7 @@ Extended FSM in Rust
 ====================
 
 [![crates.io](http://meritbadge.herokuapp.com/coap)](https://crates.io/crates/coap)
+[![Travis Build Status](https://travis-ci.org/przygienda/rust-extfsm.svg?branch=master)](https://travis-ci.org/przygienda/rust-extfsm)
 
    * internal event queue allows machine to post events 
      on transition completion 
