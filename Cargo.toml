@@ -12,10 +12,10 @@ repository = "https://github.com/przygienda/rust-extfsm.git"
 slog="1.5.*"
 slog-term="1.5.*"
 slog-atomic="0.4.*"
-slog-stream="*"
-dot = "*"
-uuid = { version = "*", features = ["v4"] }
-custom_derive = "*"
-enum_derive = "*"
+slog-stream="1.2.*"
+dot = "0.1.*"
+uuid = { version = "0.5.*", features = ["v4"] }
+custom_derive = "0.1.*"
+enum_derive = "0.1.*"
 
 [features]
