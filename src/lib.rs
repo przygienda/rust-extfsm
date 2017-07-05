@@ -1,5 +1,5 @@
 //! Implementation of a generic final state machine with
-//! extended state. Futures worth mentioning:
+//! extended state. Features worth mentioning:
 //!
 //! * optional exit/enter transitions on states
 //! * each event instance can provide boxed arguments to transiton closure
