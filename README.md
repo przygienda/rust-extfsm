@@ -1,6 +1,8 @@
 Extended FSM in Rust 
 ====================
 
+[![crates.io](http://meritbadge.herokuapp.com/coap)](https://crates.io/crates/coap)
+
    * internal event queue allows machine to post events 
      on transition completion 
    * state entry/exit transition support 
