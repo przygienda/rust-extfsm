@@ -1,11 +1,11 @@
 [package]
 name = "extfsm"
 description="Extended Final State Machine with internal event queue and entry/exit transitions"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["prz@juniper.net <prz@juniper.net>"]
 readme = "README.md"
 keywords = [ "fsm" ]
-license-file = "LICENSE"
+license = "Apache-2.0"
 repository = "https://github.com/przygienda/rust-extfsm.git"
 
 [dependencies]
