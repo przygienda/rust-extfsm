@@ -825,7 +825,7 @@ mod tests {
 	extern crate slog;
 	extern crate slog_term;
 	extern crate slog_atomic;
-	extern crate slog_stream;
+	extern crate slog_async;
 
 	use std::collections::HashMap;
 	use std::hash::Hash;
@@ -836,6 +836,7 @@ mod tests {
 
 	use super::{FSM, Errors, RunsFSM, EntryExit, TransitionTarget, TransitionSource};
 	use std::borrow::Borrow;
+	use std;
 
 	#[derive(Debug, Clone)]
 	enum StillCoinType {
@@ -884,7 +885,9 @@ mod tests {
 	type CoinStillFSM = FSM<StillExtState, StillStates, StillEvents, StillArguments, StillErrors>;
 
 	fn build_fsm() -> CoinStillFSM {
-		let drain = slog_term::streamer().async().compact().build();
+		let decorator = slog_term::PlainDecorator::new(std::io::stdout());
+		let drain = slog_term::CompactFormat::new(decorator).build().fuse();
+		let drain = slog_async::Async::new(drain).build().fuse();
 
 		let drain = AtomicSwitch::new(drain);
 
