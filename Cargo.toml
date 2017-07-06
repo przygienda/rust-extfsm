@@ -1,7 +1,7 @@
 [package]
 name = "extfsm"
 description="Extended Final State Machine with internal event queue and entry/exit transitions"
-version = "0.5.1"
+version = "0.5.2"
 authors = ["prz@juniper.net <prz@juniper.net>"]
 readme = "README.md"
 keywords = [ "fsm" ]
