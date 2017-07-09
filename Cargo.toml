@@ -4,7 +4,7 @@ description="Extended Final State Machine with internal event queue and entry/ex
 version = "0.5.2"
 authors = ["prz@juniper.net <prz@juniper.net>"]
 readme = "README.md"
-keywords = [ "fsm" ]
+keywords = [ "fsm", "state", "state-machine" ]
 license = "Apache-2.0"
 repository = "https://github.com/przygienda/rust-extfsm.git"
 
