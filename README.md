@@ -7,10 +7,10 @@ Extended Final State Machine in Rust
 
    * internal event queue allows a machine to post events 
      against itself on transition completion 
-   * supports transition on state entry/exit  
+   * supports optional transition per state entry/exit  
    * events can carry dynamic arguments accessible when 
      transition is executed
-   * machine generates its own .dot graphs 
+   * machine generates its own .dot graphs easily converted into .pdf or .svg
    * slog debugging support 
    * machine's extended state can be examined when not processing events
 
