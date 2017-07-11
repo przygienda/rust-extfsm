@@ -1,17 +1,18 @@
-Extended FSM in Rust 
-====================
+Extended Final State Machine in Rust 
+====================================
 
 [![crates.io](http://meritbadge.herokuapp.com/coap)](https://crates.io/crates/coap)
 [![Travis Build Status](https://travis-ci.org/przygienda/rust-extfsm.svg?branch=master)](https://travis-ci.org/przygienda/rust-extfsm)
 [![Coverage Status](https://coveralls.io/repos/przygienda/rust-extfsm/badge.svg?branch=master&service=github)](https://coveralls.io/github/przygienda/rust-extfsm?branch=master)
 
-   * internal event queue allows machine to post events 
-     on transition completion 
-   * state entry/exit transition support 
-   * events can carry arguments accessible on transition
-   * generates its own .dot graphs 
+   * internal event queue allows a machine to post events 
+     against itself on transition completion 
+   * supports transition on state entry/exit  
+   * events can carry dynamic arguments accessible when 
+     transition is executed
+   * machine generates its own .dot graphs 
    * slog debugging support 
-   * extended state can be examined when not executing
+   * machine's extended state can be examined when not processing events
 
 License
 =======
