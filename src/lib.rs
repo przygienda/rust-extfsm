@@ -1,4 +1,4 @@
-//! Implementation of a generic final state machine with
+//! Implementation of a generic finite state machine with
 //! extended state. Features worth mentioning:
 //!
 //! * optional exit/enter transitions on states
@@ -109,7 +109,7 @@ pub type EntryExitTransitionFn<ExtendedState,
 		TransitionFnArguments,
 		ErrorType>;
 
-/// *Final state machine type*
+/// *Finite state machine type*
 ///
 /// # Template parameters
 ///
