@@ -1,5 +1,5 @@
-Extended Final State Machine in Rust 
-====================================
+Extended Finite State Machine in Rust 
+=====================================
 
 [![crates.io](http://meritbadge.herokuapp.com/coap)](https://crates.io/crates/coap)
 [![Travis Build Status](https://travis-ci.org/przygienda/rust-extfsm.svg?branch=master)](https://travis-ci.org/przygienda/rust-extfsm)
