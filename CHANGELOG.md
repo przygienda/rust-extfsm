@@ -1,3 +1,11 @@
+Version 0.7
+===========
+* breaks API from 0.6 making the addition of transition more of a 'stacked' API where 
+  properties of transitions can be added as needed. This will prevent further breakage 
+  in the future when arguments are added. 
+* summarize graph edges much better 
+* allow for colored edges which are kept in groups
+
 Version 0.6
 ===========
 

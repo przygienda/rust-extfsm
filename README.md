@@ -10,7 +10,8 @@ Extended Finite State Machine in Rust
    * supports optional transition per state entry/exit  
    * events can carry dynamic arguments accessible when 
      transition is executed
-   * machine generates its own .dot graphs easily converted into .pdf or .svg
+   * machine generates its own .dot graphs easily converted into .pdf or .svg supporting 
+     colored edges and summarizing edges for same start and end state transitions
    * slog debugging support 
    * machine's extended state can be examined when not processing events
 
