@@ -18,7 +18,9 @@ itertools = "0.7.*"
 lazy_static = "*"
 
 [dependencies.dot]
-path="/gitlab/github-dot-rust-color"
+# path="/gitlab/github-dot-rust-color"
+git = "https://github.com/przygienda/dot-rust.git"
+branch = "develop"
 
 [dev-dependencies]
 slog-term="2"
