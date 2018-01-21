@@ -19,7 +19,7 @@ lazy_static = "*"
 
 [dependencies.dot]
 # path="/gitlab/github-dot-rust-color"
-git = "https://github.com/przygienda/dot-rust.git"
+git = "https://github.com/GrahamDennis/dot-rust.git"
 branch = "develop"
 
 [dev-dependencies]
