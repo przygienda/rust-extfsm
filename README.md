@@ -5,6 +5,21 @@ Extended Finite State Machine in Rust
 [![Travis Build Status](https://travis-ci.org/przygienda/rust-extfsm.svg?branch=master)](https://travis-ci.org/przygienda/rust-extfsm)
 [![Coverage Status](https://coveralls.io/repos/przygienda/rust-extfsm/badge.svg?branch=master&service=github)](https://coveralls.io/github/przygienda/rust-extfsm?branch=master)
 
+Introduction
+============
+
+Library to support programming of Extended Finite State Machines (FSM) in Rust. 
+The machine is not necessarily built for fastest zero-copy speed but greatest 
+flexibility and maintanability. Non zero-copy design has been chosen since after 
+event processing it stores state and passes control back out which would make 
+management of lifetimes very onerous on the user otherwise. 
+
+FSMs are from long engineering experience the cleanest way to implement 
+asynchronous protocols between components.
+
+Features
+========
+
    * internal event queue allows a machine to post events 
      against itself on transition completion 
    * supports optional transition per state entry/exit  
