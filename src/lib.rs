@@ -51,20 +51,20 @@ extern crate lazy_static;
 extern crate slog;
 extern crate uuid;
 
-use std::collections::{HashMap, VecDeque};
-use std::cell::{Ref, RefCell, RefMut};
-use std::hash::Hash;
-use std::fmt::Debug;
-use std::iter::Iterator;
-use slog::Logger;
-use std::default::Default;
-use std::io;
-use std::fs;
-use uuid::Uuid;
-use std::mem::swap;
-use itertools::Itertools;
-use std::cmp::Ordering;
 use dot::LabelText;
+use itertools::Itertools;
+use slog::Logger;
+use std::cell::{Ref, RefCell, RefMut};
+use std::cmp::Ordering;
+use std::collections::{HashMap, VecDeque};
+use std::default::Default;
+use std::fmt::Debug;
+use std::fs;
+use std::hash::Hash;
+use std::io;
+use std::iter::Iterator;
+use std::mem::swap;
+use uuid::Uuid;
 
 /// types of transitions on states
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -204,9 +204,10 @@ custom_derive! {
 }
 
 lazy_static! {
-    static ref COLORS : HashMap<DotColor,&'static str> =
-    zipenumvariants(Box::new(DotColor::iter_variants()),
-                    Box::new(DotColor::iter_variant_names()));
+    static ref COLORS: HashMap<DotColor, &'static str> = zipenumvariants(
+        Box::new(DotColor::iter_variants()),
+        Box::new(DotColor::iter_variant_names())
+    );
 }
 
 /// zips together two variants to allow translation over a hashmap
@@ -294,14 +295,8 @@ where
 }
 
 /// graphwalk
-impl<
-    'a,
-    ExtendedState,
-    StateType,
-    EventType,
-    TransitionFnArguments,
-    ErrorType,
-> dot::GraphWalk<'a, DotNodeKey<StateType>, DotEdgeKey<StateType>>
+impl<'a, ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+    dot::GraphWalk<'a, DotNodeKey<StateType>, DotEdgeKey<StateType>>
     for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
 where
     StateType: Clone + PartialEq + Eq + Hash + Sized,
@@ -353,14 +348,8 @@ where
 }
 
 /// graph labelling
-impl<
-    'a,
-    ExtendedState,
-    StateType,
-    EventType,
-    TransitionFnArguments,
-    ErrorType,
-> dot::Labeller<'a, DotNodeKey<StateType>, DotEdgeKey<StateType>>
+impl<'a, ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+    dot::Labeller<'a, DotNodeKey<StateType>, DotEdgeKey<StateType>>
     for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
 where
     StateType: Clone + PartialEq + Eq + Hash + Sized,
@@ -504,6 +493,27 @@ where
         self.transitions.insert(from, to).is_none()
     }
 
+    /// read only access to transition table so it can be traversed
+    pub fn transitions(
+        &self,
+    ) -> &TransitionTable<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+    {
+        &self.transitions
+    }
+
+    /// read only access to the entry/exit transition table
+    pub fn entry_exit_transitions(
+        &self,
+    ) -> &EntryExitTransitionTable<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
+    > {
+        &self.statetransitions
+    }
+
     /// new enter/exit transition per state
     /// executed _after_ the transition right before
     /// the state is entered or called _before_ transition
@@ -623,7 +633,7 @@ where
 
                         match self.statetransitions.get(&eek) {
                             None => {}
-                            Some(_) => {
+                            Some(st) => {
                                 let label = match t {
                                     &EntryExit::EntryTransition => "Enter".into(),
                                     &EntryExit::ExitTransition => "Exit".into(),
@@ -635,7 +645,11 @@ where
                                         key: key,
                                         id: Uuid::new_v4(),
                                         shape: Some(String::from("plain")),
-                                        style: dot::Style::Dashed,
+                                        style: if st.is_visible() {
+                                            dot::Style::Dashed
+                                        } else {
+                                            dot::Style::Invisible
+                                        },
                                         label: label,
                                     },
                                 );
@@ -670,12 +684,13 @@ where
                             from.state.clone())
                         .into_iter()
                     {
-                        // let's group per destination
+                        // let's group per destination, drop invisible ones
 
                         for (color, pertargetsourcecolor) in pertargetsource
                             .into_iter()
                             .sorted_by(|&(_, e1t), &(_, e2t)| e1t.color.cmp(&e2t.color))
                             .into_iter()
+                            .filter(|&(_, to)| to.is_visible())
                             .group_by(|&(_, to)| to.color)
                             .into_iter()
                         {
@@ -722,7 +737,11 @@ where
                         key.clone(),
                         DotEdge {
                             key: key,
-                            style: dot::Style::None,
+                            style: if tv.is_visible() {
+                                dot::Style::None
+                            } else {
+                                dot::Style::Invisible
+                            },
                             label: format!("{}", tv.get_name().clone().unwrap_or(String::from(""))),
                             color: tv.get_color(),
                         },
@@ -767,16 +786,25 @@ pub trait Annotated
 where
     Self: std::marker::Sized,
 {
-    ///   set optional name
+    /// set optional name
     fn name(self, _name: &str) -> Self;
-    ///   set color
+    /// set optional description
+    fn description(self, _name: &str) -> Self;
+    /// set color
     fn color(self, _color: DotColor) -> Self;
+    /// set visibility
+    fn visible(self, _visibility: bool) -> Self;
+
     fn get_name(&self) -> &Option<String>;
+    fn get_description(&self) -> &Option<String>;
     fn get_color(&self) -> DotColor;
+    fn is_visible(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-struct EntryExitKey<StateType> {
+pub struct EntryExitKey<StateType> {
     state: StateType,
     entryexit: EntryExit,
 }
@@ -788,12 +816,17 @@ pub struct TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArg
         Box<TransitionFn<ExtendedState, EventType, StateType, TransitionFnArguments, ErrorType>>,
     /// optional name of the transition used for the src->dst arrow beside the event
     name: Option<String>,
+    /// optional description of the transition
+    description: Option<String>,
+    /// visibility
+    visible: bool,
     /// optional color of the transition used for the src->dst arrow
     color: DotColor,
 }
 
 impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-    TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType> {
+    TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+{
     /// create a transition target
     ///   * `endstate` - state resulting after correct transition
     ///   * `transfn`  - transition as a boxed function taking in extended state,
@@ -808,26 +841,43 @@ impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
             endstate: endstate,
             transfn: transfn,
             name: None,
+            description: None,
+            visible: true,
             color: DotColor::black,
         }
     }
 }
 
 impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType> Annotated
-    for TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType> {
+    for TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+{
     fn name(mut self, name: &str) -> Self {
         self.name = Some(name.into());
+        self
+    }
+    fn description(mut self, desc: &str) -> Self {
+        self.description = Some(desc.into());
         self
     }
     fn color(mut self, color: DotColor) -> Self {
         self.color = color;
         self
     }
+    fn visible(mut self, vis: bool) -> Self {
+        self.visible = vis;
+        self
+    }
     fn get_name(&self) -> &Option<String> {
         &self.name
     }
+    fn get_description(&self) -> &Option<String> {
+        &self.description
+    }
     fn get_color(&self) -> DotColor {
         self.color
+    }
+    fn is_visible(&self) -> bool {
+        self.visible
     }
 }
 
@@ -858,12 +908,17 @@ pub struct EntryExitTransition<
     >,
     /// optional name of the transition used for the arrow beside the event
     name: Option<String>,
+    /// optional description of the transition
+    description: Option<String>,
+    /// visibility
+    visible: bool,
     /// optional color of the transition used for the arrow
     color: DotColor,
 }
 
 impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-    EntryExitTransition<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType> {
+    EntryExitTransition<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+{
     pub fn new(
         transfn: Box<
             EntryExitTransitionFn<
@@ -878,26 +933,43 @@ impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
         EntryExitTransition {
             transfn: transfn,
             name: None,
+            description: None,
             color: DotColor::black,
+            visible: true,
         }
     }
 }
 
 impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType> Annotated
-    for EntryExitTransition<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType> {
+    for EntryExitTransition<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+{
     fn name(mut self, name: &str) -> Self {
         self.name = Some(name.into());
+        self
+    }
+    fn description(mut self, desc: &str) -> Self {
+        self.description = Some(desc.into());
         self
     }
     fn color(mut self, color: DotColor) -> Self {
         self.color = color;
         self
     }
+    fn visible(mut self, vis: bool) -> Self {
+        self.visible = vis;
+        self
+    }
     fn get_name(&self) -> &Option<String> {
         &self.name
     }
+    fn get_description(&self) -> &Option<String> {
+        &self.description
+    }
     fn get_color(&self) -> DotColor {
         self.color
+    }
+    fn is_visible(&self) -> bool {
+        self.visible
     }
 }
 
@@ -914,13 +986,8 @@ type EntryExitTransitionTable<
     EntryExitTransition<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>,
 >;
 
-impl<
-    ExtendedState,
-    EventType,
-    StateType,
-    TransitionFnArguments,
-    ErrorType,
-> RunsFSM<EventType, StateType, TransitionFnArguments, ErrorType>
+impl<ExtendedState, EventType, StateType, TransitionFnArguments, ErrorType>
+    RunsFSM<EventType, StateType, TransitionFnArguments, ErrorType>
     for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
 where
     StateType: Clone + PartialEq + Eq + Hash + Debug + Sized,
@@ -1131,10 +1198,10 @@ mod tests {
     use std::cell::RefMut;
     use std::collections::HashMap;
 
-    use slog::*;
     use self::slog_atomic::*;
-    use std::borrow::Borrow;
+    use slog::*;
     use std;
+    use std::borrow::Borrow;
 
     use super::{zipenumvariants, Annotated, DotColor, EntryExit, EntryExitTransition, Errors,
                 RunsFSM, TransitionSource, TransitionTarget, FSM};
@@ -1281,9 +1348,9 @@ mod tests {
                 TransitionSource::new(StillStates::OpenWaitForTimeOut, StillEvents::GotCoin),
                 TransitionTarget::new(
                     StillStates::OpenWaitForTimeOut,
-                    Box::new(|_, _, _| Ok(Some(vec![(StillEvents::RejectMoney, None)],)))
+                    Box::new(|_, _, _| Ok(Some(vec![(StillEvents::RejectMoney, None)]))),
                 ).name("Reject")
-                    .color(DotColor::red)
+                    .color(DotColor::red),
             )
         );
 
@@ -1440,6 +1507,7 @@ mod tests {
             CyanEvent1,
             CyanEvent2,
             CyanEvent3,
+            InvisibleEvent,
         }
     }
 
@@ -1533,6 +1601,16 @@ mod tests {
             )
         );
 
+        assert!(
+            dottest_fsm.add_transition(
+                TransitionSource::new(DotTestStates::Three, DotTestEvents::InvisibleEvent),
+                TransitionTarget::new(DotTestStates::One, Box::new(|_, _, _| Ok(None)))
+                    .name("Three2One-INVISIBLE-BLUE")
+                    .color(DotColor::blue)
+                    .visible(false)
+            )
+        );
+
         for e in &[
             DotTestEvents::RedEvent1,
             DotTestEvents::RedEvent2,
@@ -1545,6 +1623,7 @@ mod tests {
                         TransitionTarget::new(*s, Box::new(|_, _, _| Ok(None)))
                             .name(&format!("Self2Self-{}", DOTTESTEVENTS.get(e).unwrap()))
                             .color(DotColor::red)
+                            .description("simple description"),
                     )
                 );
             }
@@ -1571,9 +1650,10 @@ mod tests {
     }
 
     lazy_static! {
-    static ref DOTTESTEVENTS : HashMap<DotTestEvents,&'static str> =
-    zipenumvariants(Box::new(DotTestEvents::iter_variants()),
-                    Box::new(DotTestEvents::iter_variant_names()));
+        static ref DOTTESTEVENTS: HashMap<DotTestEvents, &'static str> = zipenumvariants(
+            Box::new(DotTestEvents::iter_variants()),
+            Box::new(DotTestEvents::iter_variant_names())
+        );
     }
 
     #[test]
