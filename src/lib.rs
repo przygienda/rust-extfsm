@@ -5,7 +5,7 @@
 //! * each event instance can provide boxed arguments to transiton closure
 //! * each transition closure can return with vector of arguments that
 //!   are queued at the end of outstanding events queue
-//! * can generate dot represenation of itself, edges are grouped on color
+//! * can generate dot representation of itself, edges are grouped on color
 //!   and annotated with events and optional names to provide readable,
 //!   dense representation for dense graphs
 //!
