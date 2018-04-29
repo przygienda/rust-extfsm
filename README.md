@@ -29,6 +29,8 @@ Features
      colored edges and summarizing edges for same start and end state transitions
    * slog debugging support 
    * machine's extended state can be examined when not processing events
+   * machine transitions can be traversed read-only
+   * flyweight pattern to run many instances of same FSM with different extended state
 
 License
 =======
