@@ -769,7 +769,7 @@ where
 
                 // entry/exit, no color grouping necessary given we have one per state
                 for (tk, tv) in self.statetransitions.borrow().iter()
-                    .filter(|(_,tv)| tv.is_visible()) {
+                    .filter(|&(_,tv)| tv.is_visible()) {
 
                     let key: DotEdgeKey<StateType> = DotEdgeKey::new_entryexit(tk.clone());
 
