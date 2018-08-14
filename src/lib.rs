@@ -152,7 +152,9 @@ where
             >,
         >,
     >,
-    log: Logger,
+
+    /// optional logger, do not provide if performance becomes a problem on complex logging
+    log: Option<Logger>,
 
     /// dotgraph structure for output
     dotgraph: Rc<RefCell<DotGraph<StateType>>>,
@@ -474,7 +476,7 @@ where
         start_state: StateType,
         extended_init: Box<ExtendedState>,
         name: &str,
-        log: Logger,
+        log: Option<Logger>,
     ) -> Self {
         let mut g = DotGraph::default();
         g.start_state = Some(start_state.clone());
@@ -498,7 +500,7 @@ where
     pub fn flyweight(&self,
                      extended_init: Box<ExtendedState>,
                      name: &str,
-                     log: Logger) -> Self {
+                     log: Option<Logger>) -> Self {
         FSM {
             log,
             name: String::from(name),
@@ -1058,7 +1060,9 @@ where
     ) -> Result<u32, Errors<EventType, StateType, ErrorType>> {
         let el = events.len();
 
-        debug!(self.log, "FSM {} adding {} events", self.name, el);
+        if let Some(ref l) = self.log {
+            debug!(l, "FSM {} adding {} events", self.name, el);
+        }
 
         // move the queue into the closure and add events
         self.event_queue.extend(events.drain(..));
@@ -1069,7 +1073,9 @@ where
     where
         I: IntoIterator<Item = (EventType, std::option::Option<TransitionFnArguments>)>,
     {
-        debug!(self.log, "FSM {} adding events from iterator", self.name);
+        if let Some(ref l) = self.log {
+            debug!(l, "FSM {} adding events from iterator", self.name);
+        }
 
         self.event_queue.extend(events)
     }
@@ -1090,10 +1096,13 @@ where
                 let trans = transitions.get(&TransitionSource::new(state.clone(), event.clone()));
                 let ref mut q = self.event_queue;
                 let name = &self.name;
-                debug!(
-                    self.log,
-                    "FSM {} processing event {:?}/{:?}", name, event, state
-                );
+
+                if let Some(ref l) = self.log {
+                    debug!(
+                        l,
+                        "FSM {} processing event {:?}/{:?}", name, event, state
+                    );
+                }
 
                 // play the entry, exit transition draining the event queues if necessary
                 fn entryexit<
@@ -1103,7 +1112,7 @@ where
                     TransitionFnArguments,
                     ErrorType,
                 >(
-                    log: &Logger,
+                    log: Option<&Logger>,
                     extstate: RefMut<Box<ExtendedState>>,
                     name: &str,
                     s: StateType,
@@ -1132,10 +1141,13 @@ where
                         Some(ref entryexittrans) => {
                             let ref func = entryexittrans.transfn;
                             let ref tname = entryexittrans.get_name();
-                            debug!(
-                                log,
-                                "FSM {} exit/entry state transition for {:?} {:?}", name, s, tname
-                            );
+
+                            if let Some(ref l) = log {
+                                debug!(
+                                    l,
+                                    "FSM {} exit/entry state transition for {:?} {:?}", name, s, tname
+                                );
+                            }
                             match func(extstate) {
                                 Err(v) => v,
                                 Ok(mut v) => match v {
@@ -1163,7 +1175,7 @@ where
                             // run exit for state
                             let extstate = self.extended_state.borrow_mut();
                             entryexit(
-                                &self.log,
+                                self.log.as_ref(),
                                 extstate,
                                 name,
                                 state.clone(),
@@ -1188,10 +1200,13 @@ where
                                                 q.extend(eventset.drain(..));
                                             }
                                         }
-                                        debug!(
-                                            self.log,
-                                            "FSM {} moving machine to {:?}", name, endstate
-                                        );
+
+                                        if let Some(ref l) = self.log {
+                                            debug!(
+                                                l,
+                                                "FSM {} moving machine to {:?}", name, endstate
+                                            );
+                                        }
                                         self.current_state = endstate.clone();
                                         Errors::OK
                                     }
@@ -1208,7 +1223,7 @@ where
                                 } else {
                                     let extstate = self.extended_state.borrow_mut();
                                     entryexit(
-                                        &self.log,
+                                        self.log.as_ref(),
                                         extstate,
                                         name,
                                         endstate.clone(),
@@ -1235,10 +1250,12 @@ where
         // check whether we got any errors on transitions
         match lr.pop() {
             Some(x) => {
-                debug!(
-                    self.log,
-                    "FSM {} filter on transition failures yields {:?}", self.name, &x
-                );
+                if let Some(ref l) = self.log {
+                    debug!(
+                        l,
+                        "FSM {} filter on transition failures yields {:?}", self.name, &x
+                    );
+                }
                 Err(x)
             }
             _ => Ok(nrev),
@@ -1343,7 +1360,7 @@ mod tests {
                 StillStates::ClosedWaitForMoney,
                 coin_fsm_extstate(),
                 "coin_still",
-                mainlog,
+                Some(mainlog),
             );
 
         let check_money = move |_extstate: RefMut<Box<StillExtState>>,
@@ -1595,7 +1612,7 @@ mod tests {
             DotTestStates::Init,
             Box::new(DotTestExtState {}),
             "DotTest",
-            mainlog,
+            Some(mainlog),
         );
 
         // stack a bunch self transitions onto each other to test complex dot output
@@ -1753,7 +1770,7 @@ mod tests {
         let mut c2 = c1.flyweight(
             coin_fsm_extstate(),
             "coin_still flyweight",
-            build_logger(Level::Info),
+            Some(build_logger(Level::Info)),
         );
 
         // run c1 with one coin & c2 with two coins & compare stats
