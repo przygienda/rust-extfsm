@@ -1051,7 +1051,7 @@ impl<ExtendedState, EventType, StateType, TransitionFnArguments, ErrorType>
     for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
 where
     StateType: Clone + PartialEq + Eq + Hash + Debug + Sized,
-    EventType: Clone + PartialEq + Eq + Hash + Debug + Sized,
+    EventType: Clone + PartialEq + Eq + Hash + Debug + Sized + Debug,
     ErrorType: Debug,
 {
     fn add_events(
@@ -1061,7 +1061,10 @@ where
         let el = events.len();
 
         if let Some(ref l) = self.log {
-            debug!(l, "FSM {} adding {} events", self.name, el);
+            debug!(l, "FSM {} adding {} events: {:?}", self.name, el,
+                   events.iter()
+                       .map(|e| e.0.clone())
+                       .collect::<Vec<_>>());
         }
 
         // move the queue into the closure and add events
