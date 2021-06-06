@@ -18,8 +18,8 @@ lazy_static = "~1"
 dot="~0.1"
 
 [dev-dependencies]
-slog-term="~2.5"
+slog-term="~2"
 slog-atomic="~2"
-slog-async="~2.3"
+slog-async="~2"
 
 [features]
