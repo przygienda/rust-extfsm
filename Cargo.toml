@@ -9,7 +9,7 @@ license = "Apache-2.0"
 repository = "https://github.com/przygienda/rust-extfsm.git"
 
 [dependencies]
-slog="~2.5"
+slog="~2"
 uuid = { version = "~0.8", features = ["v4"] }
 custom_derive = "~0.1"
 enum_derive = "~0.1"
