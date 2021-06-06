@@ -20,6 +20,6 @@ dot="~0.1"
 [dev-dependencies]
 slog-term="~2.5"
 slog-atomic="~2"
-slog-async="~2"
+slog-async="~2.3"
 
 [features]
