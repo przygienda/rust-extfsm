@@ -10,7 +10,7 @@ repository = "https://github.com/przygienda/rust-extfsm.git"
 
 [dependencies]
 slog="~2.5"
-uuid = { version = "0.8", features = ["v4"] }
+uuid = { version = "~0.8", features = ["v4"] }
 custom_derive = "~0.1"
 enum_derive = "~0.1"
 itertools = "~0.10"
@@ -18,7 +18,7 @@ lazy_static = "~1"
 dot="~0.1"
 
 [dev-dependencies]
-slog-term="~2"
+slog-term="~2.5"
 slog-atomic="~2"
 slog-async="~2"
 
