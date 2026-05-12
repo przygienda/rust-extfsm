@@ -272,7 +272,7 @@ lazy_static! {
 }
 
 /// zips together two variants to allow translation over a hashmap
-fn zipenumvariants<ET>(
+pub fn zipenumvariants<ET>(
     i1: Box<dyn Iterator<Item = ET>>,
     i2: Box<dyn Iterator<Item = &'static &'static str>>,
 ) -> HashMap<ET, &'static &'static str>
