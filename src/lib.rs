@@ -39,24 +39,12 @@
 //! See the License for the specific language governing permissions and
 //! limitations under the License.
 
-#[macro_use]
-extern crate custom_derive;
-extern crate dot;
-#[macro_use]
-extern crate enum_derive;
-extern crate itertools;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate slog;
-extern crate uuid;
-
 use dot::LabelText;
 use itertools::Itertools;
-use slog::Logger;
+use slog::{Logger, debug};
 use std::cell::{Ref, RefCell, RefMut};
 use std::cmp::Ordering;
-use std::collections::{HashMap, VecDeque, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::default::Default;
 use std::fmt::Debug;
 use std::fs;
@@ -66,6 +54,10 @@ use std::iter::Iterator;
 use std::mem::swap;
 use std::rc::Rc;
 use uuid::Uuid;
+
+use lazy_static::lazy_static;
+use strum::{IntoEnumIterator, VariantNames};
+use strum_macros::{EnumIter, VariantNames};
 
 /// types of transitions on states
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -91,20 +83,38 @@ pub type OptionalFnArg<TransitionFnArguments> = Option<TransitionFnArguments>;
 
 /// set of events to execute with according optional argument on call of transition function
 pub type EventQueue<EventType, TransitionFnArguments> =
-VecDeque<(EventType, OptionalFnArg<TransitionFnArguments>)>;
+    VecDeque<(EventType, OptionalFnArg<TransitionFnArguments>)>;
 
 /// type to be returned by all transitions
 /// an optional vector of events to be added to the FSM event queue or an error is returned
-pub type TransitionResult<EventType, StateType, TransitionFnArguments, ErrorType> = Result<
+pub type TransitionResult<
+    EventType,
+    StateType,
+    TransitionFnArguments,
+    ErrorType,
+> = Result<
     Option<Vec<(EventType, OptionalFnArg<TransitionFnArguments>)>>,
     Errors<EventType, StateType, ErrorType>,
 >;
 
 /// transition function used, takes optional argument and returns either with error
 /// or an optional set of events to be added to processing (at the end of event queue)
-pub type TransitionFn<ExtendedState, EventType, StateType, TransitionFnArguments, ErrorType> =
-dyn Fn(RefMut<Box<ExtendedState>>, EventType, OptionalFnArg<TransitionFnArguments>)
-    -> TransitionResult<EventType, StateType, TransitionFnArguments, ErrorType>;
+pub type TransitionFn<
+    ExtendedState,
+    EventType,
+    StateType,
+    TransitionFnArguments,
+    ErrorType,
+> = dyn Fn(
+    RefMut<Box<ExtendedState>>,
+    EventType,
+    OptionalFnArg<TransitionFnArguments>,
+) -> TransitionResult<
+    EventType,
+    StateType,
+    TransitionFnArguments,
+    ErrorType,
+>;
 
 /// transition function to either enter or exit a specific state, return same as
 /// `FSMTransitionFn`. `StateType` passed in is previous state before currently entered or
@@ -118,8 +128,16 @@ pub type EntryExitTransitionFn<
     StateType,
     TransitionFnArguments,
     ErrorType,
-> = dyn Fn(RefMut<Box<ExtendedState>>, Option<StateType>, Option<EventType>)
-    -> TransitionResult<EventType, StateType, TransitionFnArguments, ErrorType>;
+> = dyn Fn(
+    RefMut<Box<ExtendedState>>,
+    Option<StateType>,
+    Option<EventType>,
+) -> TransitionResult<
+    EventType,
+    StateType,
+    TransitionFnArguments,
+    ErrorType,
+>;
 
 /// *Finite state machine type*
 ///
@@ -129,10 +147,15 @@ pub type EntryExitTransitionFn<
 ///                      stores extended state
 ///  * `TransitionFnArguments` - type that can be boxed as parameters to an event instance
 ///  * `ErrorType` - Errors that transitions can generate internally
-pub struct FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-    where
-        StateType: Clone + Eq + Hash + Sized,
-        EventType: Clone + Eq + Hash + Sized,
+pub struct FSM<
+    ExtendedState,
+    StateType,
+    EventType,
+    TransitionFnArguments,
+    ErrorType,
+> where
+    StateType: Clone + Eq + Hash + Sized,
+    EventType: Clone + Eq + Hash + Sized,
 {
     pub extended_state: RefCell<Box<ExtendedState>>,
 
@@ -142,7 +165,13 @@ pub struct FSM<ExtendedState, StateType, EventType, TransitionFnArguments, Error
     event_queue: EventQueue<EventType, TransitionFnArguments>,
     transitions: Rc<
         RefCell<
-            TransitionTable<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>,
+            TransitionTable<
+                ExtendedState,
+                StateType,
+                EventType,
+                TransitionFnArguments,
+                ErrorType,
+            >,
         >,
     >,
     statetransitions: Rc<
@@ -168,8 +197,8 @@ pub struct FSM<ExtendedState, StateType, EventType, TransitionFnArguments, Error
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct ColorGroupedTransitions<StateType>
-    where
-        StateType: Clone + Sized + Eq + Hash,
+where
+    StateType: Clone + Sized + Eq + Hash,
 {
     color: DotColor,
     source: StateType,
@@ -178,8 +207,8 @@ struct ColorGroupedTransitions<StateType>
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum DotEdgeKey<StateType>
-    where
-        StateType: Clone + Sized + Eq + Hash,
+where
+    StateType: Clone + Sized + Eq + Hash,
 {
     /// complex key providing per color in a state all `TransitionSource`s that can be grouped
     /// into a single arrow. First boolean indicates when the transition is self->self
@@ -188,10 +217,14 @@ enum DotEdgeKey<StateType>
 }
 
 impl<StateType> DotEdgeKey<StateType>
-    where
-        StateType: Clone + Eq + Hash + Sized,
+where
+    StateType: Clone + Eq + Hash + Sized,
 {
-    pub fn new_set(color: DotColor, source: StateType, target: StateType) -> DotEdgeKey<StateType> {
+    pub fn new_set(
+        color: DotColor,
+        source: StateType,
+        target: StateType,
+    ) -> DotEdgeKey<StateType> {
         DotEdgeKey::TransitionsSet(ColorGroupedTransitions {
             color: color,
             source: source,
@@ -199,49 +232,59 @@ impl<StateType> DotEdgeKey<StateType>
         })
     }
 
-    pub fn new_entryexit(into: EntryExitKey<StateType>) -> DotEdgeKey<StateType> {
+    pub fn new_entryexit(
+        into: EntryExitKey<StateType>,
+    ) -> DotEdgeKey<StateType> {
         DotEdgeKey::EntryExit(into)
     }
 }
 
-custom_derive! {
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord,
-         IterVariants(ColorVariants), IterVariantNames(ColorNames))]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    EnumIter,
+    VariantNames
+)]
 #[allow(non_camel_case_types)]
-    /// available dot colors for the transition destinations
-    pub enum DotColor {
-        red,
-        green,
-        blue,
-        yellow,
-        black,
-        gray,
-        cyan,
-        gold
-    }
+/// available dot colors for the transition destinations
+pub enum DotColor {
+    red,
+    green,
+    blue,
+    yellow,
+    black,
+    gray,
+    cyan,
+    gold,
 }
 
 lazy_static! {
-    static ref COLORS: HashMap<DotColor, &'static str> = zipenumvariants(
-        Box::new(DotColor::iter_variants()),
-        Box::new(DotColor::iter_variant_names())
-    );
+    static ref COLORS: HashMap<DotColor, &'static &'static str> =
+        zipenumvariants(
+            Box::new(DotColor::iter()),
+            Box::new(DotColor::VARIANTS.iter())
+        );
 }
 
 /// zips together two variants to allow translation over a hashmap
-fn zipenumvariants<ET>(
-    i1: Box<dyn Iterator<Item=ET>>,
-    i2: Box<dyn Iterator<Item=&'static str>>,
-) -> HashMap<ET, &'static str>
-    where
-        ET: Sized + Eq + Hash,
+pub fn zipenumvariants<ET>(
+    i1: Box<dyn Iterator<Item = ET>>,
+    i2: Box<dyn Iterator<Item = &'static &'static str>>,
+) -> HashMap<ET, &'static &'static str>
+where
+    ET: Sized + Eq + Hash,
 {
     i1.zip(i2).collect::<HashMap<_, _>>()
 }
 
 /// color can be translated into its name
-impl Into<&'static str> for DotColor {
-    fn into(self) -> &'static str {
+impl Into<&'static &'static str> for DotColor {
+    fn into(self) -> &'static &'static str {
         COLORS.get(&self).expect("dot color cannot be translated")
     }
 }
@@ -249,8 +292,8 @@ impl Into<&'static str> for DotColor {
 /// internal edge to generate DOT graphical view
 #[derive(Clone, PartialEq, Eq)]
 struct DotEdge<StateType>
-    where
-        StateType: Clone + Sized + Eq + Hash,
+where
+    StateType: Clone + Sized + Eq + Hash,
 {
     key: DotEdgeKey<StateType>,
     style: dot::Style,
@@ -268,7 +311,10 @@ struct DotNodeKey<StateType: Clone + Sized + Eq + Hash> {
 }
 
 impl<StateType: Clone + Sized + Eq + Hash> DotNodeKey<StateType> {
-    pub fn new(entryexit: Option<EntryExit>, state: StateType) -> DotNodeKey<StateType> {
+    pub fn new(
+        entryexit: Option<EntryExit>,
+        state: StateType,
+    ) -> DotNodeKey<StateType> {
         DotNodeKey {
             entryexit: entryexit,
             state: state,
@@ -279,8 +325,8 @@ impl<StateType: Clone + Sized + Eq + Hash> DotNodeKey<StateType> {
 /// internal node to generate DOT graphical view
 #[derive(Clone, PartialEq, Eq)]
 struct DotNode<StateType>
-    where
-        StateType: Clone + Sized + Eq + Hash,
+where
+    StateType: Clone + Sized + Eq + Hash,
 {
     key: DotNodeKey<StateType>,
     id: Uuid,
@@ -299,8 +345,8 @@ struct DotGraph<StateType: Clone + Sized + Eq + Hash> {
 }
 
 impl<StateType> Default for DotGraph<StateType>
-    where
-        StateType: Clone + Sized + Eq + Hash,
+where
+    StateType: Clone + Sized + Eq + Hash,
 {
     fn default() -> DotGraph<StateType> {
         DotGraph {
@@ -314,11 +360,17 @@ impl<StateType> Default for DotGraph<StateType>
 
 /// graphwalk
 impl<'a, ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-dot::GraphWalk<'a, DotNodeKey<StateType>, DotEdgeKey<StateType>>
-for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-    where
-        StateType: Clone + PartialEq + Eq + Hash + Sized,
-        EventType: Clone + PartialEq + Eq + Hash + Sized,
+    dot::GraphWalk<'a, DotNodeKey<StateType>, DotEdgeKey<StateType>>
+    for FSM<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
+    >
+where
+    StateType: Clone + PartialEq + Eq + Hash + Sized,
+    EventType: Clone + PartialEq + Eq + Hash + Sized,
 {
     fn nodes(&'a self) -> dot::Nodes<'a, DotNodeKey<StateType>> {
         self.dotgraph.borrow().nodes.keys().cloned().collect()
@@ -332,7 +384,10 @@ for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
         match *e {
             DotEdgeKey::EntryExit(ref eek) => {
                 if eek.entryexit == EntryExit::EntryTransition {
-                    DotNodeKey::new(Some(eek.entryexit.clone()), eek.state.clone())
+                    DotNodeKey::new(
+                        Some(eek.entryexit.clone()),
+                        eek.state.clone(),
+                    )
                 } else {
                     if let Some(_) = self.statetransitions.borrow().get(eek) {
                         DotNodeKey::new(None, eek.state.clone())
@@ -341,7 +396,9 @@ for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                     }
                 }
             }
-            DotEdgeKey::TransitionsSet(ref tk) => DotNodeKey::new(None, tk.source.clone()),
+            DotEdgeKey::TransitionsSet(ref tk) => {
+                DotNodeKey::new(None, tk.source.clone())
+            }
         }
     }
 
@@ -350,7 +407,10 @@ for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
         match *e {
             DotEdgeKey::EntryExit(ref eek) => {
                 if eek.entryexit == EntryExit::ExitTransition {
-                    DotNodeKey::new(Some(eek.entryexit.clone()), eek.state.clone())
+                    DotNodeKey::new(
+                        Some(eek.entryexit.clone()),
+                        eek.state.clone(),
+                    )
                 } else {
                     if let Some(_) = self.statetransitions.borrow().get(eek) {
                         DotNodeKey::new(None, eek.state.clone())
@@ -360,18 +420,26 @@ for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                 }
             }
 
-            DotEdgeKey::TransitionsSet(ref tk) => DotNodeKey::new(None, tk.target.clone()),
+            DotEdgeKey::TransitionsSet(ref tk) => {
+                DotNodeKey::new(None, tk.target.clone())
+            }
         }
     }
 }
 
 /// graph labelling
 impl<'a, ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-dot::Labeller<'a, DotNodeKey<StateType>, DotEdgeKey<StateType>>
-for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-    where
-        StateType: Clone + PartialEq + Eq + Hash + Sized,
-        EventType: Clone + PartialEq + Eq + Hash + Sized,
+    dot::Labeller<'a, DotNodeKey<StateType>, DotEdgeKey<StateType>>
+    for FSM<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
+    >
+where
+    StateType: Clone + PartialEq + Eq + Hash + Sized,
+    EventType: Clone + PartialEq + Eq + Hash + Sized,
 {
     fn graph_id(&'a self) -> dot::Id<'a> {
         let gid = format!("G{:X}", self.dotgraph.borrow().id.as_u128());
@@ -389,7 +457,10 @@ for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
         }
     }
 
-    fn node_shape(&'a self, n: &DotNodeKey<StateType>) -> Option<dot::LabelText<'a>> {
+    fn node_shape(
+        &'a self,
+        n: &DotNodeKey<StateType>,
+    ) -> Option<dot::LabelText<'a>> {
         let borrowed = self.dotgraph.borrow();
         match borrowed.nodes.get(n) {
             Some(realnode) => {
@@ -423,25 +494,38 @@ for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
         dot::Style::None
     }
 
-    fn node_label<'b>(&'b self, n: &DotNodeKey<StateType>) -> dot::LabelText<'b> {
+    fn node_label<'b>(
+        &'b self,
+        n: &DotNodeKey<StateType>,
+    ) -> dot::LabelText<'b> {
         match self.dotgraph.borrow().nodes.get(n) {
-            Some(ref realnode) => dot::LabelText::LabelStr(realnode.label.clone().into()),
+            Some(ref realnode) => {
+                dot::LabelText::LabelStr(realnode.label.clone().into())
+            }
             None => unreachable!(),
         }
     }
 
-    fn edge_label<'b>(&'b self, ek: &DotEdgeKey<StateType>) -> dot::LabelText<'b> {
-        match self.dotgraph.borrow().edges.get(ek) {
-            Some(realedge) => dot::LabelText::LabelStr(realedge.label.clone().into()),
-            None => unreachable!(),
-        }
-    }
-
-    fn edge_color(&'a self, ek: &DotEdgeKey<StateType>) -> Option<LabelText<'a>> {
+    fn edge_label<'b>(
+        &'b self,
+        ek: &DotEdgeKey<StateType>,
+    ) -> dot::LabelText<'b> {
         match self.dotgraph.borrow().edges.get(ek) {
             Some(realedge) => {
-                let cs: &str = realedge.color.into();
-                Some(dot::LabelText::LabelStr(String::from(cs).into()))
+                dot::LabelText::LabelStr(realedge.label.clone().into())
+            }
+            None => unreachable!(),
+        }
+    }
+
+    fn edge_color(
+        &'a self,
+        ek: &DotEdgeKey<StateType>,
+    ) -> Option<LabelText<'a>> {
+        match self.dotgraph.borrow().edges.get(ek) {
+            Some(realedge) => {
+                let cs: &'static &'static str = realedge.color.into();
+                Some(dot::LabelText::LabelStr(String::from(*cs).into()))
             }
             None => unreachable!(),
         }
@@ -457,8 +541,10 @@ pub trait RunsFSM<EventType, StateType, TransitionFnArguments, ErrorType> {
     ) -> Result<u32, Errors<EventType, StateType, ErrorType>>;
     /// add events to the event queue @ the back from an iterator, events are _not_ processed
     fn extend_events<I>(&mut self, iter: I)
-        where
-            I: IntoIterator<Item=(EventType, std::option::Option<TransitionFnArguments>)>;
+    where
+        I: IntoIterator<
+            Item = (EventType, std::option::Option<TransitionFnArguments>),
+        >;
 
     /// process the whole event queue. Observe that this can generate multiple messages
     /// and queue events against the FSM itself again so don't rely which state the machine ends
@@ -467,15 +553,17 @@ pub trait RunsFSM<EventType, StateType, TransitionFnArguments, ErrorType> {
     /// `returns` - number of events processed or errors encountered.
     ///               On errors not much can be done
     ///               except killing the FSM instance
-    fn process_event_queue(&mut self) -> Result<u32, Errors<EventType, StateType, ErrorType>>;
+    fn process_event_queue(
+        &mut self,
+    ) -> Result<u32, Errors<EventType, StateType, ErrorType>>;
 }
 
 /// implementation of methods to contstruct the machine
 impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-    where
-        StateType: Clone + Eq + Hash + Sized,
-        EventType: Clone + Eq + Hash + Sized,
+    FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+where
+    StateType: Clone + Eq + Hash + Sized,
+    EventType: Clone + Eq + Hash + Sized,
 {
     /// new FSM with an initial extended state box'ed up so it can be passed around easily
     pub fn new(
@@ -484,17 +572,24 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
         name: &str,
         log: Option<Logger>,
     ) -> Self {
-        let mut g = DotGraph::default();
-        g.start_state = Some(start_state.clone());
+        let g = DotGraph {
+            start_state: Some(start_state.clone()),
+            ..Default::default()
+        };
 
         FSM {
             log,
             name: String::from(name),
             current_state: start_state.clone(),
             start_state,
-            event_queue: VecDeque::<(EventType, OptionalFnArg<TransitionFnArguments>)>::new(),
+            event_queue: VecDeque::<(
+                EventType,
+                OptionalFnArg<TransitionFnArguments>,
+            )>::new(),
             transitions: Rc::new(RefCell::new(TransitionTable::new())),
-            statetransitions: Rc::new(RefCell::new(EntryExitTransitionTable::new())),
+            statetransitions: Rc::new(RefCell::new(
+                EntryExitTransitionTable::new(),
+            )),
             extended_state: RefCell::new(extended_init),
             dotgraph: Rc::new(RefCell::new(g)),
             last_state: None,
@@ -515,7 +610,10 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
             name: String::from(name),
             current_state: self.start_state.clone(),
             start_state: self.start_state.clone(),
-            event_queue: VecDeque::<(EventType, OptionalFnArg<TransitionFnArguments>)>::new(),
+            event_queue: VecDeque::<(
+                EventType,
+                OptionalFnArg<TransitionFnArguments>,
+            )>::new(),
             transitions: self.transitions.clone(),
             statetransitions: self.statetransitions.clone(),
             extended_state: RefCell::new(extended_init),
@@ -531,7 +629,13 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
     pub fn add_transition(
         &mut self,
         from: TransitionSource<StateType, EventType>,
-        to: TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>,
+        to: TransitionTarget<
+            ExtendedState,
+            StateType,
+            EventType,
+            TransitionFnArguments,
+            ErrorType,
+        >,
     ) -> bool {
         self.transitions.borrow_mut().insert(from, to).is_none()
     }
@@ -539,8 +643,16 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
     /// read only access to transition table so it can be traversed.
     pub fn transitions(
         &self,
-    ) -> Ref<TransitionTable<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>>
-    {
+    ) -> Ref<
+        '_,
+        TransitionTable<
+            ExtendedState,
+            StateType,
+            EventType,
+            TransitionFnArguments,
+            ErrorType,
+        >,
+    > {
         self.transitions.borrow()
     }
 
@@ -548,6 +660,7 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
     pub fn entry_exit_transitions(
         &self,
     ) -> Ref<
+        '_,
         EntryExitTransitionTable<
             ExtendedState,
             StateType,
@@ -586,7 +699,8 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                     entryexit: case.1,
                 },
                 trans,
-            ).is_none()
+            )
+            .is_none()
     }
 
     pub fn name(&self) -> &String {
@@ -595,7 +709,7 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
 
     /// gives a read only peek into the extended state from the outside of transitions.
     /// Must be given up before running machine of course
-    pub fn extended_state(&self) -> Ref<Box<ExtendedState>> {
+    pub fn extended_state(&self) -> Ref<'_, Box<ExtendedState>> {
         self.extended_state.borrow()
     }
 
@@ -606,17 +720,16 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
 
     /// `returns` - TRUE if machine has outstanding events queued to process
     pub fn events_pending(&self) -> bool {
-        self.event_queue.len() > 0
+        !self.event_queue.is_empty()
     }
 }
 
 /// machine can be dotted if we have ordering on events & states
-
 impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-    where
-        StateType: Clone + Eq + Ord + Hash + Sized,
-        EventType: Clone + Eq + Ord + Hash + Sized,
+    FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+where
+    StateType: Clone + Eq + Ord + Hash + Sized,
+    EventType: Clone + Eq + Ord + Hash + Sized,
 {
     /// provides output of the FSM in dot format
     ///
@@ -627,8 +740,8 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
     pub fn dotfile(
         &self,
         filename: Option<String>,
-        state2name: &HashMap<StateType, &'static str>,
-        event2name: &HashMap<EventType, &'static str>,
+        state2name: &HashMap<StateType, &'static &'static str>,
+        event2name: &HashMap<EventType, &'static &'static str>,
         omitstates: Option<&HashSet<StateType>>,
         omitevents: Option<&HashSet<EventType>>,
     ) -> Result<(), io::Error> {
@@ -638,16 +751,18 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
             Ok(None)
         };
 
-        fn omitstate<ST: Eq + Hash>(omitstates: &Option<&HashSet<ST>>, n: &ST, ) -> bool {
-            omitstates
-                .map_or(false,
-                        |os| os.contains(n))
+        fn omitstate<ST: Eq + Hash>(
+            omitstates: &Option<&HashSet<ST>>,
+            n: &ST,
+        ) -> bool {
+            omitstates.map_or(false, |os| os.contains(n))
         }
 
-        fn omitevent<EV: Eq + Hash>(omitevents: &Option<&HashSet<EV>>, n: &EV, ) -> bool {
-            omitevents
-                .map_or(false,
-                        |os| os.contains(n))
+        fn omitevent<EV: Eq + Hash>(
+            omitevents: &Option<&HashSet<EV>>,
+            n: &EV,
+        ) -> bool {
+            omitevents.map_or(false, |os| os.contains(n))
         }
 
         if let Ok(maybef) = fileattempt {
@@ -681,14 +796,19 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                                 id: Uuid::new_v4(),
                                 shape: shape,
                                 style: dot::Style::None,
-                                label: String::from(*state2name.get(n).unwrap_or(&"?")),
+                                label: String::from(
+                                    **state2name.get(n).unwrap_or(&&"?"),
+                                ),
                             },
                         );
 
                         // now, let's generate pseudo nodes if necessary with entry, exit with
                         // invisible shapes
 
-                        for t in &[EntryExit::EntryTransition, EntryExit::ExitTransition] {
+                        for t in &[
+                            EntryExit::EntryTransition,
+                            EntryExit::ExitTransition,
+                        ] {
                             let eek = EntryExitKey {
                                 state: n.clone(),
                                 entryexit: t.clone(),
@@ -698,11 +818,17 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                                 None => {}
                                 Some(st) => {
                                     let label = match t {
-                                        &EntryExit::EntryTransition => "Enter".into(),
-                                        &EntryExit::ExitTransition => "Exit".into(),
+                                        &EntryExit::EntryTransition => {
+                                            "Enter".into()
+                                        }
+                                        &EntryExit::ExitTransition => {
+                                            "Exit".into()
+                                        }
                                     };
                                     let key = DotNodeKey::new(
-                                        Some(t.clone()), n.clone());
+                                        Some(t.clone()),
+                                        n.clone(),
+                                    );
                                     dotgraphwork.nodes.insert(
                                         key.clone(),
                                         DotNode {
@@ -732,7 +858,9 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                     .transitions
                     .borrow()
                     .iter()
-                    .sorted_by(|&(_, e1t), &(_, e2t)| e1t.endstate.cmp(&e2t.endstate))
+                    .sorted_by(|&(_, e1t), &(_, e2t)| {
+                        e1t.endstate.cmp(&e2t.endstate)
+                    })
                     .into_iter()
                     .group_by(|&(_, to)| to.endstate.clone())
                     .into_iter()
@@ -741,23 +869,23 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                     for (source, pertargetsource) in pertargetsource
                         .into_iter()
                         .filter(|e1| !omitevent(&omitevents, &e1.0.event))
-                        .sorted_by(|e1, e2|
-                            match e1.0.state.cmp(&e2.0.state) {
-                                Ordering::Equal =>
-                                    e1.0.event.cmp(&e2.0.event),
-                                v @ _ => v,
-                            })
+                        .sorted_by(|e1, e2| match e1.0.state.cmp(&e2.0.state) {
+                            Ordering::Equal => e1.0.event.cmp(&e2.0.event),
+                            v @ _ => v,
+                        })
                         .into_iter()
                         // group them by state
-                        .group_by(|&(from, _)|
-                            from.state.clone())
+                        .group_by(|&(from, _)| from.state.clone())
                         .into_iter()
-                        .filter(|(src, _)| !omitstate(&omitstates, src)) {
+                        .filter(|(src, _)| !omitstate(&omitstates, src))
+                    {
                         // let's group per destination, drop invisible ones
 
                         for (color, pertargetsourcecolor) in pertargetsource
                             .into_iter()
-                            .sorted_by(|&(_, e1t), &(_, e2t)| e1t.color.cmp(&e2t.color))
+                            .sorted_by(|&(_, e1t), &(_, e2t)| {
+                                e1t.color.cmp(&e2t.color)
+                            })
                             .into_iter()
                             .filter(|&(_, to)| to.is_visible())
                             .group_by(|&(_, to)| to.color)
@@ -766,7 +894,11 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                             // we have source,target and color grouped, each of them generates one
                             // edge with all the events stacked as labels
 
-                            let key = DotEdgeKey::new_set(color, source.clone(), target.clone());
+                            let key = DotEdgeKey::new_set(
+                                color,
+                                source.clone(),
+                                target.clone(),
+                            );
 
                             dotgraphwork.edges.insert(
                                 key.clone(),
@@ -784,12 +916,14 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                                                         format!("{}\n", n)
                                                     } else {
                                                         "".into()
-                                                    }).unwrap_or("".into()),
+                                                    })
+                                                    .unwrap_or("".into()),
                                                 event2name
                                                     .get(&source.event.clone())
-                                                    .unwrap_or(&"")
+                                                    .unwrap_or(&&"")
                                             )
-                                        }).collect::<Vec<_>>()
+                                        })
+                                        .collect::<Vec<_>>()
                                         .join("\n"),
                                     color: color,
                                 },
@@ -806,14 +940,18 @@ FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                     .filter(|&(st, _)| !omitstate(&omitstates, &st.state))
                     .filter(|&(_, tv)| tv.is_visible())
                 {
-                    let key: DotEdgeKey<StateType> = DotEdgeKey::new_entryexit(tk.clone());
+                    let key: DotEdgeKey<StateType> =
+                        DotEdgeKey::new_entryexit(tk.clone());
 
                     dotgraphwork.edges.insert(
                         key.clone(),
                         DotEdge {
                             key: key,
                             style: dot::Style::None,
-                            label: format!("{}", tv.get_name().clone().unwrap_or(String::from(""))),
+                            label: tv
+                                .get_name()
+                                .clone()
+                                .unwrap_or_else(String::new),
                             color: tv.get_color(),
                         },
                     );
@@ -845,7 +983,10 @@ impl<StateType, EventType> TransitionSource<StateType, EventType> {
     /// create a transition source
     ///   * `state` - original state
     ///   * `event` - event occuring
-    pub fn new(state: StateType, event: EventType) -> TransitionSource<StateType, EventType> {
+    pub fn new(
+        state: StateType,
+        event: EventType,
+    ) -> TransitionSource<StateType, EventType> {
         TransitionSource {
             state: state,
             event: event,
@@ -862,8 +1003,8 @@ impl<StateType, EventType> TransitionSource<StateType, EventType> {
 }
 
 pub trait Annotated
-    where
-        Self: std::marker::Sized,
+where
+    Self: std::marker::Sized,
 {
     /// set optional name
     fn name(self, _name: &str) -> Self;
@@ -899,10 +1040,23 @@ impl<StateType> EntryExitKey<StateType> {
 }
 
 /// implements the target of a transition upon an event
-pub struct TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType> {
+pub struct TransitionTarget<
+    ExtendedState,
+    StateType,
+    EventType,
+    TransitionFnArguments,
+    ErrorType,
+> {
     endstate: StateType,
-    transfn:
-    Box<TransitionFn<ExtendedState, EventType, StateType, TransitionFnArguments, ErrorType>>,
+    transfn: Box<
+        TransitionFn<
+            ExtendedState,
+            EventType,
+            StateType,
+            TransitionFnArguments,
+            ErrorType,
+        >,
+    >,
     /// optional name of the transition used for the src->dst arrow beside the event
     name: Option<String>,
     /// optional description of the transition
@@ -914,7 +1068,13 @@ pub struct TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArg
 }
 
 impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+    TransitionTarget<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
+    >
 {
     /// create a transition target
     ///   * `endstate` - state resulting after correct transition
@@ -923,7 +1083,13 @@ TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments, Err
     pub fn new(
         endstate: StateType,
         transfn: Box<
-            TransitionFn<ExtendedState, EventType, StateType, TransitionFnArguments, ErrorType>,
+            TransitionFn<
+                ExtendedState,
+                EventType,
+                StateType,
+                TransitionFnArguments,
+                ErrorType,
+            >,
         >,
     ) -> Self {
         TransitionTarget {
@@ -941,8 +1107,15 @@ TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments, Err
     }
 }
 
-impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType> Annotated
-for TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+    Annotated
+    for TransitionTarget<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
+    >
 {
     fn name(mut self, name: &str) -> Self {
         self.name = Some(name.into());
@@ -975,11 +1148,22 @@ for TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments,
 }
 
 /// map of from state/event to end state/transition
-type TransitionTable<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType> =
-HashMap<
+type TransitionTable<
+    ExtendedState,
+    StateType,
+    EventType,
+    TransitionFnArguments,
+    ErrorType,
+> = HashMap<
     // from
     TransitionSource<StateType, EventType>,
-    TransitionTarget<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>,
+    TransitionTarget<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
+    >,
 >;
 
 /// stores the transition
@@ -1010,7 +1194,13 @@ pub struct EntryExitTransition<
 }
 
 impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-EntryExitTransition<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+    EntryExitTransition<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
+    >
 {
     pub fn new(
         transfn: Box<
@@ -1033,8 +1223,15 @@ EntryExitTransition<ExtendedState, StateType, EventType, TransitionFnArguments, 
     }
 }
 
-impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType> Annotated
-for EntryExitTransition<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
+    Annotated
+    for EntryExitTransition<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
+    >
 {
     fn name(mut self, name: &str) -> Self {
         self.name = Some(name.into());
@@ -1076,16 +1273,28 @@ type EntryExitTransitionTable<
 > = HashMap<
     // from
     EntryExitKey<StateType>,
-    EntryExitTransition<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>,
+    EntryExitTransition<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
+    >,
 >;
 
 impl<ExtendedState, EventType, StateType, TransitionFnArguments, ErrorType>
-RunsFSM<EventType, StateType, TransitionFnArguments, ErrorType>
-for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
-    where
-        StateType: Clone + PartialEq + Eq + Hash + Debug + Sized,
-        EventType: Clone + PartialEq + Eq + Hash + Debug + Sized + Debug,
-        ErrorType: Debug,
+    RunsFSM<EventType, StateType, TransitionFnArguments, ErrorType>
+    for FSM<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
+    >
+where
+    StateType: Clone + PartialEq + Eq + Hash + Debug + Sized,
+    EventType: Clone + PartialEq + Eq + Hash + Debug + Sized + Debug,
+    ErrorType: Debug,
 {
     fn add_events(
         &mut self,
@@ -1109,8 +1318,10 @@ for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
     }
 
     fn extend_events<I>(&mut self, events: I)
-        where
-            I: IntoIterator<Item=(EventType, std::option::Option<TransitionFnArguments>)>,
+    where
+        I: IntoIterator<
+            Item = (EventType, std::option::Option<TransitionFnArguments>),
+        >,
     {
         if let Some(ref l) = self.log {
             debug!(l, "FSM {} adding events from iterator", self.name);
@@ -1119,7 +1330,9 @@ for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
         self.event_queue.extend(events)
     }
 
-    fn process_event_queue(&mut self) -> Result<u32, Errors<EventType, StateType, ErrorType>> {
+    fn process_event_queue(
+        &mut self,
+    ) -> Result<u32, Errors<EventType, StateType, ErrorType>> {
         let mut evs = VecDeque::new();
         // drain out the current queue to operate on it, we'll add while running transitions again
         swap(&mut evs, &mut self.event_queue);
@@ -1168,10 +1381,10 @@ for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                     last_state: Option<StateType>,
                     last_event: Option<EventType>,
                 ) -> Errors<EventType, StateType, ErrorType>
-                    where
-                        StateType: Clone + PartialEq + Eq + Hash + Debug,
-                        EventType: Clone + PartialEq + Eq + Hash + Debug,
-                        ErrorType: Debug,
+                where
+                    StateType: Clone + PartialEq + Eq + Hash + Debug,
+                    EventType: Clone + PartialEq + Eq + Hash + Debug,
+                    ErrorType: Debug,
                 {
                     match transitions.get(&EntryExitKey {
                         state: on_state.clone(),
@@ -1289,10 +1502,12 @@ for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                     None => Errors::NoTransition(event, state),
                 }
                 // check for any errors in the whole transitions of the queue
-            }).filter(|e| match *e {
-            Errors::OK => false,
-            _ => true,
-        }).take(1)
+            })
+            .filter(|e| match *e {
+                Errors::OK => false,
+                _ => true,
+            })
+            .take(1)
             .collect::<Vec<_>>(); // try to get first error out if any
 
         // check whether we got any errors on transitions
@@ -1301,7 +1516,9 @@ for FSM<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
                 if let Some(ref l) = self.log {
                     debug!(
                         l,
-                        "FSM {} filter on transition failures yields {:?}", self.name, &x
+                        "FSM {} filter on transition failures yields {:?}",
+                        self.name,
+                        &x
                     );
                 }
                 Err(x)
@@ -1316,22 +1533,30 @@ mod tests {
     //! small test of a coin machine opening/closing and checking coins
     //! it does check event generation in the transition, extended state,
     //! transitions on state enter/exit and error returns
-    extern crate slog;
-    extern crate slog_async;
-    extern crate slog_atomic;
-    extern crate slog_term;
+    // extern crate slog;
+    // extern crate slog_async;
+    // extern crate slog_atomic;
+    // extern crate slog_term;
+    // extern crate strum;
+    // extern crate strum_macros;
+
+    use lazy_static::lazy_static;
+    use strum::{IntoEnumIterator, VariantNames};
+    use strum_macros::{EnumIter, VariantNames};
 
     use std::cell::RefMut;
     use std::collections::HashMap;
 
-    use self::slog_atomic::*;
     use slog::*;
+    use slog_async::*;
+    use slog_atomic::*;
+    use slog_term::*;
     use std;
     use std::borrow::Borrow;
 
     use super::{
-        zipenumvariants, Annotated, DotColor, EntryExit, EntryExitTransition, Errors, RunsFSM,
-        TransitionSource, TransitionTarget, FSM,
+        Annotated, DotColor, EntryExit, EntryExitTransition, Errors, FSM,
+        RunsFSM, TransitionSource, TransitionTarget, zipenumvariants,
     };
 
     fn build_logger(level: Level) -> Logger {
@@ -1359,26 +1584,40 @@ mod tests {
         Coin(StillCoinType),
     }
 
-    custom_derive! {
-        #[derive(IterVariants(StillStateVariants), IterVariantNames(StillStateNames),
-            Debug, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
-        enum StillStates {
-            ClosedWaitForMoney,
-            CheckingMoney,
-            OpenWaitForTimeOut,
-        }
+    #[derive(
+        EnumIter,
+        VariantNames,
+        Debug,
+        Clone,
+        Hash,
+        Eq,
+        PartialEq,
+        PartialOrd,
+        Ord
+    )]
+    enum StillStates {
+        ClosedWaitForMoney,
+        CheckingMoney,
+        OpenWaitForTimeOut,
     }
 
-    custom_derive! {
-        #[derive(IterVariants(StillEventVariants), IterVariantNames(StillEventNames),
-            Debug, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
-        enum StillEvents {
-            GotCoin,
-            // needs coin type
-            AcceptMoney,
-            RejectMoney,
-            Timeout,
-        }
+    #[derive(
+        EnumIter,
+        VariantNames,
+        Debug,
+        Clone,
+        Hash,
+        Eq,
+        PartialEq,
+        PartialOrd,
+        Ord
+    )]
+    enum StillEvents {
+        GotCoin,
+        // needs coin type
+        AcceptMoney,
+        RejectMoney,
+        Timeout,
     }
 
     #[derive(Debug)]
@@ -1394,7 +1633,13 @@ mod tests {
         enteredon: Vec<(Option<StillStates>, Option<StillEvents>)>,
     }
 
-    type CoinStillFSM = FSM<StillExtState, StillStates, StillEvents, StillArguments, StillErrors>;
+    type CoinStillFSM = FSM<
+        StillExtState,
+        StillStates,
+        StillEvents,
+        StillArguments,
+        StillErrors,
+    >;
 
     fn coin_fsm_extstate() -> Box<StillExtState> {
         Box::new(StillExtState {
@@ -1409,64 +1654,93 @@ mod tests {
     fn build_coin_fsm() -> CoinStillFSM {
         let mainlog = build_logger(Level::Info);
 
-        let mut still_fsm =
-            FSM::<StillExtState, StillStates, StillEvents, StillArguments, StillErrors>::new(
-                StillStates::ClosedWaitForMoney,
-                coin_fsm_extstate(),
-                "coin_still",
-                Some(mainlog),
-            );
+        let mut still_fsm = FSM::<
+            StillExtState,
+            StillStates,
+            StillEvents,
+            StillArguments,
+            StillErrors,
+        >::new(
+            StillStates::ClosedWaitForMoney,
+            coin_fsm_extstate(),
+            "coin_still",
+            Some(mainlog),
+        );
 
-        let check_money = move |_extstate: RefMut<Box<StillExtState>>,
-                                _ev: StillEvents,
-                                arg: Option<StillArguments>| {
-            match arg {
-                None => Err(Errors::InternalError(
-                    StillEvents::GotCoin,
-                    StillStates::ClosedWaitForMoney,
-                    StillErrors::CoinArgumentMissing,
-                )),
-                Some(arg) => match arg {
-                    StillArguments::Coin(t) => match t {
-                        StillCoinType::Good => Ok(Some(vec![(StillEvents::AcceptMoney, None)])),
-                        StillCoinType::Bad => Ok(Some(vec![(StillEvents::RejectMoney, None)])),
+        let check_money =
+            move |_extstate: RefMut<Box<StillExtState>>,
+                  _ev: StillEvents,
+                  arg: Option<StillArguments>| {
+                match arg {
+                    None => Err(Errors::InternalError(
+                        StillEvents::GotCoin,
+                        StillStates::ClosedWaitForMoney,
+                        StillErrors::CoinArgumentMissing,
+                    )),
+                    Some(arg) => match arg {
+                        StillArguments::Coin(t) => match t {
+                            StillCoinType::Good => {
+                                Ok(Some(vec![(StillEvents::AcceptMoney, None)]))
+                            }
+                            StillCoinType::Bad => {
+                                Ok(Some(vec![(StillEvents::RejectMoney, None)]))
+                            }
+                        },
                     },
-                },
-            }
-        };
+                }
+            };
 
         assert!(
             still_fsm.add_transition(
-                TransitionSource::new(StillStates::ClosedWaitForMoney, StillEvents::GotCoin),
-                TransitionTarget::new(StillStates::CheckingMoney, Box::new(check_money))
-                    .name("ProcessCoin")
-                    .color(DotColor::green),
+                TransitionSource::new(
+                    StillStates::ClosedWaitForMoney,
+                    StillEvents::GotCoin
+                ),
+                TransitionTarget::new(
+                    StillStates::CheckingMoney,
+                    Box::new(check_money)
+                )
+                .name("ProcessCoin")
+                .color(DotColor::green),
             )
         );
 
         assert!(
             still_fsm.add_transition(
-                TransitionSource::new(StillStates::CheckingMoney, StillEvents::RejectMoney),
+                TransitionSource::new(
+                    StillStates::CheckingMoney,
+                    StillEvents::RejectMoney
+                ),
                 TransitionTarget::new(
                     StillStates::ClosedWaitForMoney,
                     Box::new(|_, _, _| Ok(None))
-                ).name("Rejected")
-                    .color(DotColor::red),
+                )
+                .name("Rejected")
+                .color(DotColor::red),
             )
         );
 
         assert!(
             still_fsm.add_transition(
-                TransitionSource::new(StillStates::CheckingMoney, StillEvents::GotCoin),
-                TransitionTarget::new(StillStates::CheckingMoney, Box::new(|_, _, _| Ok(None)))
-                    .name("IgnoreAnotherCoin")
-                    .color(DotColor::red)
+                TransitionSource::new(
+                    StillStates::CheckingMoney,
+                    StillEvents::GotCoin
+                ),
+                TransitionTarget::new(
+                    StillStates::CheckingMoney,
+                    Box::new(|_, _, _| Ok(None))
+                )
+                .name("IgnoreAnotherCoin")
+                .color(DotColor::red)
             )
         );
 
         assert!(
             still_fsm.add_transition(
-                TransitionSource::new(StillStates::CheckingMoney, StillEvents::AcceptMoney),
+                TransitionSource::new(
+                    StillStates::CheckingMoney,
+                    StillEvents::AcceptMoney
+                ),
                 TransitionTarget::new(
                     StillStates::OpenWaitForTimeOut,
                     Box::new(|mut estate: RefMut<Box<StillExtState>>, _, _| {
@@ -1474,41 +1748,57 @@ mod tests {
                         // we count open/close on entry/exit
                         Ok(None)
                     })
-                ).name("Accepted")
-                    .color(DotColor::green)
+                )
+                .name("Accepted")
+                .color(DotColor::green)
             )
         );
 
         assert!(
             still_fsm.add_transition(
-                TransitionSource::new(StillStates::OpenWaitForTimeOut, StillEvents::GotCoin),
+                TransitionSource::new(
+                    StillStates::OpenWaitForTimeOut,
+                    StillEvents::GotCoin
+                ),
                 TransitionTarget::new(
                     StillStates::OpenWaitForTimeOut,
-                    Box::new(|_, _, _| Ok(Some(vec![(StillEvents::RejectMoney, None)]))),
-                ).name("Reject")
-                    .color(DotColor::red),
+                    Box::new(|_, _, _| Ok(Some(vec![(
+                        StillEvents::RejectMoney,
+                        None
+                    )]))),
+                )
+                .name("Reject")
+                .color(DotColor::red),
             )
         );
 
         assert!(
             still_fsm.add_transition(
-                TransitionSource::new(StillStates::OpenWaitForTimeOut, StillEvents::RejectMoney),
+                TransitionSource::new(
+                    StillStates::OpenWaitForTimeOut,
+                    StillEvents::RejectMoney
+                ),
                 TransitionTarget::new(
                     StillStates::OpenWaitForTimeOut,
                     Box::new(|_, _, _| Ok(None))
-                ).name("Rejected")
-                    .color(DotColor::red)
+                )
+                .name("Rejected")
+                .color(DotColor::red)
             )
         );
 
         assert!(
             still_fsm.add_transition(
-                TransitionSource::new(StillStates::OpenWaitForTimeOut, StillEvents::Timeout),
+                TransitionSource::new(
+                    StillStates::OpenWaitForTimeOut,
+                    StillEvents::Timeout
+                ),
                 TransitionTarget::new(
                     StillStates::ClosedWaitForMoney,
                     Box::new(|_, _, _| Ok(None))
-                ).name("TimeOut")
-                    .color(DotColor::blue)
+                )
+                .name("TimeOut")
+                .color(DotColor::blue)
             )
         );
 
@@ -1516,13 +1806,16 @@ mod tests {
             still_fsm.add_enter_transition(
                 (StillStates::OpenWaitForTimeOut, EntryExit::EntryTransition),
                 EntryExitTransition::new(Box::new(
-                    |mut estate: RefMut<Box<StillExtState>>, laststate, lastevent| {
+                    |mut estate: RefMut<Box<StillExtState>>,
+                     laststate,
+                     lastevent| {
                         estate.opened += 1;
                         estate.enteredon.push((laststate, lastevent));
                         Ok(None)
                     }
-                )).name("CountOpens")
-                    .color(DotColor::gold)
+                ))
+                .name("CountOpens")
+                .color(DotColor::gold)
             )
         );
 
@@ -1530,13 +1823,16 @@ mod tests {
             still_fsm.add_enter_transition(
                 (StillStates::OpenWaitForTimeOut, EntryExit::ExitTransition),
                 EntryExitTransition::new(Box::new(
-                    |mut estate: RefMut<Box<StillExtState>>, laststate, lastevent| {
+                    |mut estate: RefMut<Box<StillExtState>>,
+                     laststate,
+                     lastevent| {
                         estate.closed += 1;
                         estate.exitedon.push((laststate, lastevent));
                         Ok(None)
                     }
-                )).name("CountClose")
-                    .color(DotColor::gold)
+                ))
+                .name("CountClose")
+                .color(DotColor::gold)
             )
         );
 
@@ -1552,7 +1848,10 @@ mod tests {
         match still_fsm.process_event_queue() {
             Ok(v) => panic!("failed with {:?} # processed tokens as Ok(_)", v),
             Err(v) => match v {
-                Errors::NoTransition(StillEvents::Timeout, StillStates::ClosedWaitForMoney) => (),
+                Errors::NoTransition(
+                    StillEvents::Timeout,
+                    StillStates::ClosedWaitForMoney,
+                ) => (),
                 _ => panic!("failed with wrong FSM error"),
             },
         }
@@ -1569,7 +1868,8 @@ mod tests {
                     (StillEvents::GotCoin, Some(badcoin.clone())),
                     (StillEvents::GotCoin, Some(goodcoin.clone())),
                     (StillEvents::GotCoin, Some(goodcoin.clone())),
-                ]).unwrap(),
+                ])
+                .unwrap(),
             4
         );
         while still_fsm.events_pending() {
@@ -1598,7 +1898,10 @@ mod tests {
 
         assert_eq!(
             es.borrow().exitedon,
-            vec![(Some(StillStates::CheckingMoney), Some(StillEvents::Timeout))]
+            vec![(
+                Some(StillStates::CheckingMoney),
+                Some(StillEvents::Timeout)
+            )]
         );
         assert_eq!(
             es.borrow().enteredon,
@@ -1618,49 +1921,66 @@ mod tests {
                 .dotfile(
                     fname,
                     &zipenumvariants(
-                        Box::new(StillStates::iter_variants()),
-                        Box::new(StillStates::iter_variant_names()),
+                        Box::new(StillStates::iter()),
+                        Box::new(StillStates::VARIANTS.iter()),
                     ),
                     &zipenumvariants(
-                        Box::new(StillEvents::iter_variants()),
-                        Box::new(StillEvents::iter_variant_names()),
+                        Box::new(StillEvents::iter()),
+                        Box::new(StillEvents::VARIANTS.iter()),
                     ),
                     None,
                     None,
-                ).expect("cannot dotfile");
+                )
+                .expect("cannot dotfile");
         }
     }
 
     #[derive(Debug, Clone)]
     enum DotTestArguments {}
 
-    custom_derive! {
-        #[derive(IterVariants(StateVariants), IterVariantNames(StateNames),
-            Debug, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord)]
-        enum DotTestStates {
-            Init,
-            One,
-            Two,
-            Three,
-        }
+    #[derive(
+        EnumIter,
+        VariantNames,
+        Debug,
+        Clone,
+        Copy,
+        Hash,
+        Eq,
+        PartialEq,
+        PartialOrd,
+        Ord
+    )]
+    enum DotTestStates {
+        Init,
+        One,
+        Two,
+        Three,
     }
 
-    custom_derive! {
-        #[derive(IterVariants(EventVariants), IterVariantNames(EventNames),
-            Debug, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord)]
-        enum DotTestEvents {
-            Event1,
-            Event2,
-            Event3,
-            Event4,
-            RedEvent1,
-            RedEvent2,
-            RedEvent3,
-            CyanEvent1,
-            CyanEvent2,
-            CyanEvent3,
-            InvisibleEvent,
-        }
+    #[derive(
+        EnumIter,
+        VariantNames,
+        Debug,
+        Clone,
+        Copy,
+        Hash,
+        Eq,
+        PartialEq,
+        PartialOrd,
+        Ord
+    )]
+    enum DotTestEvents {
+        Event1,
+        Event2,
+        Event3,
+        Event4,
+        RedEvent1,
+        RedEvent2,
+        RedEvent3,
+        CyanEvent1,
+        CyanEvent2,
+        CyanEvent3,
+        InvisibleEvent,
     }
 
     #[derive(Debug)]
@@ -1668,8 +1988,13 @@ mod tests {
 
     struct DotTestExtState {}
 
-    type DotTestFSM =
-    FSM<DotTestExtState, DotTestStates, DotTestEvents, DotTestArguments, DotTestErrors>;
+    type DotTestFSM = FSM<
+        DotTestExtState,
+        DotTestStates,
+        DotTestEvents,
+        DotTestArguments,
+        DotTestErrors,
+    >;
 
     fn build_dottest_fsm() -> DotTestFSM {
         let mainlog = build_logger(Level::Debug);
@@ -1690,76 +2015,124 @@ mod tests {
         // stack a bunch self transitions onto each other to test complex dot output
         assert!(
             dottest_fsm.add_transition(
-                TransitionSource::new(DotTestStates::Init, DotTestEvents::Event1),
-                TransitionTarget::new(DotTestStates::One, Box::new(|_, _, _| Ok(None)))
-                    .name("Init2One-GRAY")
-                    .color(DotColor::gray),
+                TransitionSource::new(
+                    DotTestStates::Init,
+                    DotTestEvents::Event1
+                ),
+                TransitionTarget::new(
+                    DotTestStates::One,
+                    Box::new(|_, _, _| Ok(None))
+                )
+                .name("Init2One-GRAY")
+                .color(DotColor::gray),
             )
         );
 
         // stack a bunch self transitions onto each other to test complex dot output
         assert!(
             dottest_fsm.add_transition(
-                TransitionSource::new(DotTestStates::One, DotTestEvents::Event1),
-                TransitionTarget::new(DotTestStates::Two, Box::new(|_, _, _| Ok(None)))
-                    .name("One2Two-GREEN")
-                    .color(DotColor::green)
+                TransitionSource::new(
+                    DotTestStates::One,
+                    DotTestEvents::Event1
+                ),
+                TransitionTarget::new(
+                    DotTestStates::Two,
+                    Box::new(|_, _, _| Ok(None))
+                )
+                .name("One2Two-GREEN")
+                .color(DotColor::green)
             )
         );
 
         // stack a bunch self transitions onto each other to test complex dot output
         assert!(
             dottest_fsm.add_transition(
-                TransitionSource::new(DotTestStates::Two, DotTestEvents::Event1),
-                TransitionTarget::new(DotTestStates::Three, Box::new(|_, _, _| Ok(None)))
-                    .name("Two2Three-BLUE")
-                    .color(DotColor::blue)
+                TransitionSource::new(
+                    DotTestStates::Two,
+                    DotTestEvents::Event1
+                ),
+                TransitionTarget::new(
+                    DotTestStates::Three,
+                    Box::new(|_, _, _| Ok(None))
+                )
+                .name("Two2Three-BLUE")
+                .color(DotColor::blue)
             )
         );
 
         assert!(
             dottest_fsm.add_transition(
-                TransitionSource::new(DotTestStates::Three, DotTestEvents::Event1),
-                TransitionTarget::new(DotTestStates::One, Box::new(|_, _, _| Ok(None)))
-                    .name("Three2One-1-RED")
-                    .color(DotColor::red)
+                TransitionSource::new(
+                    DotTestStates::Three,
+                    DotTestEvents::Event1
+                ),
+                TransitionTarget::new(
+                    DotTestStates::One,
+                    Box::new(|_, _, _| Ok(None))
+                )
+                .name("Three2One-1-RED")
+                .color(DotColor::red)
             )
         );
 
         assert!(
             dottest_fsm.add_transition(
-                TransitionSource::new(DotTestStates::Three, DotTestEvents::Event2),
-                TransitionTarget::new(DotTestStates::One, Box::new(|_, _, _| Ok(None)))
-                    .name("Three2One-2-RED")
-                    .color(DotColor::red)
+                TransitionSource::new(
+                    DotTestStates::Three,
+                    DotTestEvents::Event2
+                ),
+                TransitionTarget::new(
+                    DotTestStates::One,
+                    Box::new(|_, _, _| Ok(None))
+                )
+                .name("Three2One-2-RED")
+                .color(DotColor::red)
             )
         );
 
         assert!(
             dottest_fsm.add_transition(
-                TransitionSource::new(DotTestStates::Three, DotTestEvents::Event3),
-                TransitionTarget::new(DotTestStates::One, Box::new(|_, _, _| Ok(None)))
-                    .name("Three2One-3-BLUE")
-                    .color(DotColor::blue)
+                TransitionSource::new(
+                    DotTestStates::Three,
+                    DotTestEvents::Event3
+                ),
+                TransitionTarget::new(
+                    DotTestStates::One,
+                    Box::new(|_, _, _| Ok(None))
+                )
+                .name("Three2One-3-BLUE")
+                .color(DotColor::blue)
             )
         );
 
         assert!(
             dottest_fsm.add_transition(
-                TransitionSource::new(DotTestStates::Three, DotTestEvents::Event4),
-                TransitionTarget::new(DotTestStates::One, Box::new(|_, _, _| Ok(None)))
-                    .name("Three2One-4-BLUE")
-                    .color(DotColor::blue)
+                TransitionSource::new(
+                    DotTestStates::Three,
+                    DotTestEvents::Event4
+                ),
+                TransitionTarget::new(
+                    DotTestStates::One,
+                    Box::new(|_, _, _| Ok(None))
+                )
+                .name("Three2One-4-BLUE")
+                .color(DotColor::blue)
             )
         );
 
         assert!(
             dottest_fsm.add_transition(
-                TransitionSource::new(DotTestStates::Three, DotTestEvents::InvisibleEvent),
-                TransitionTarget::new(DotTestStates::One, Box::new(|_, _, _| Ok(None)))
-                    .name("Three2One-INVISIBLE-BLUE")
-                    .color(DotColor::blue)
-                    .visible(false)
+                TransitionSource::new(
+                    DotTestStates::Three,
+                    DotTestEvents::InvisibleEvent
+                ),
+                TransitionTarget::new(
+                    DotTestStates::One,
+                    Box::new(|_, _, _| Ok(None))
+                )
+                .name("Three2One-INVISIBLE-BLUE")
+                .color(DotColor::blue)
+                .visible(false)
             )
         );
 
@@ -1778,12 +2151,17 @@ mod tests {
             DotTestEvents::RedEvent2,
             DotTestEvents::RedEvent3,
         ] {
-            for s in &[DotTestStates::One, DotTestStates::Two, DotTestStates::Three] {
+            for s in
+                &[DotTestStates::One, DotTestStates::Two, DotTestStates::Three]
+            {
                 assert!(
                     dottest_fsm.add_transition(
                         TransitionSource::new(*s, *e),
                         TransitionTarget::new(*s, Box::new(|_, _, _| Ok(None)))
-                            .name(&format!("Self2Self-{}", DOTTESTEVENTS.get(e).unwrap()))
+                            .name(&format!(
+                                "Self2Self-{}",
+                                DOTTESTEVENTS.get(e).unwrap()
+                            ))
                             .color(DotColor::red)
                             .description("simple description"),
                     )
@@ -1796,7 +2174,9 @@ mod tests {
             DotTestEvents::CyanEvent2,
             DotTestEvents::CyanEvent3,
         ] {
-            for s in &[DotTestStates::One, DotTestStates::Two, DotTestStates::Three] {
+            for s in
+                &[DotTestStates::One, DotTestStates::Two, DotTestStates::Three]
+            {
                 assert!(
                     dottest_fsm.add_transition(
                         TransitionSource::new(*s, *e),
@@ -1812,10 +2192,11 @@ mod tests {
     }
 
     lazy_static! {
-        static ref DOTTESTEVENTS: HashMap<DotTestEvents, &'static str> = zipenumvariants(
-            Box::new(DotTestEvents::iter_variants()),
-            Box::new(DotTestEvents::iter_variant_names())
-        );
+        static ref DOTTESTEVENTS: HashMap<DotTestEvents, &'static &'static str> =
+            zipenumvariants(
+                Box::new(DotTestEvents::iter()),
+                Box::new(DotTestEvents::VARIANTS.iter())
+            );
     }
 
     #[test]
@@ -1827,12 +2208,14 @@ mod tests {
                 .dotfile(
                     fname,
                     &zipenumvariants(
-                        Box::new(DotTestStates::iter_variants()),
-                        Box::new(DotTestStates::iter_variant_names()),
+                        Box::new(DotTestStates::iter()),
+                        Box::new(DotTestStates::VARIANTS.iter()),
                     ),
                     &DOTTESTEVENTS,
-                    None, None,
-                ).expect("cannot dotfile");
+                    None,
+                    None,
+                )
+                .expect("cannot dotfile");
         }
     }
 
@@ -1849,7 +2232,10 @@ mod tests {
         let goodcoin = StillArguments::Coin(StillCoinType::Good);
 
         assert_eq!(
-            c1.add_events(&mut vec![(StillEvents::GotCoin, Some(goodcoin.clone())), ])
+            c1.add_events(&mut vec![(
+                StillEvents::GotCoin,
+                Some(goodcoin.clone())
+            ),])
                 .unwrap(),
             1
         );
@@ -1878,7 +2264,10 @@ mod tests {
         assert!(es.borrow().closed == 1);
 
         assert_eq!(
-            c2.add_events(&mut vec![(StillEvents::GotCoin, Some(goodcoin.clone())), ])
+            c2.add_events(&mut vec![(
+                StillEvents::GotCoin,
+                Some(goodcoin.clone())
+            ),])
                 .unwrap(),
             1
         );
