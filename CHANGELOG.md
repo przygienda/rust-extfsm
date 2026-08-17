@@ -1,3 +1,12 @@
+Version 0.14.1
+==============
+
+* dropped the `lazy_static` dependency: the internal colour/variant tables now use
+  `std::sync::LazyLock` (stable since Rust 1.80)
+* dependency requirements tidied to plain minor pins (`slog 2.8`, `slog-term 2.9`,
+  `slog-async 2.8`, `strum`/`strum_macros 0.28`)
+* no public API change
+
 Version 0.14
 ============
 

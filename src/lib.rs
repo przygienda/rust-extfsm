@@ -48,11 +48,11 @@ use std::hash::Hash;
 use std::iter::Iterator;
 use std::mem::swap;
 use std::rc::Rc;
+use std::sync::LazyLock;
 use std::{fs, io};
 
 use dot::LabelText;
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use slog::{Logger, debug};
 use strum::{IntoEnumIterator, VariantNames};
 use strum_macros::{EnumIter, VariantNames};
@@ -254,13 +254,13 @@ pub enum DotColor {
     gold,
 }
 
-lazy_static! {
-    static ref COLORS: HashMap<DotColor, &'static &'static str> =
+static COLORS: LazyLock<HashMap<DotColor, &'static &'static str>> =
+    LazyLock::new(|| {
         zipenumvariants(
             Box::new(DotColor::iter()),
-            Box::new(DotColor::VARIANTS.iter())
-        );
-}
+            Box::new(DotColor::VARIANTS.iter()),
+        )
+    });
 
 /// zips together two variants to allow translation over a hashmap
 pub fn zipenumvariants<ET>(
@@ -1557,8 +1557,8 @@ mod tests {
     use std::borrow::Borrow;
     use std::cell::RefMut;
     use std::collections::HashMap;
+    use std::sync::LazyLock;
 
-    use lazy_static::lazy_static;
     use slog::*;
     use slog_atomic::*;
     use strum::{IntoEnumIterator, VariantNames};
@@ -2201,13 +2201,14 @@ mod tests {
         dottest_fsm
     }
 
-    lazy_static! {
-        static ref DOTTESTEVENTS: HashMap<DotTestEvents, &'static &'static str> =
-            zipenumvariants(
-                Box::new(DotTestEvents::iter()),
-                Box::new(DotTestEvents::VARIANTS.iter())
-            );
-    }
+    static DOTTESTEVENTS: LazyLock<
+        HashMap<DotTestEvents, &'static &'static str>,
+    > = LazyLock::new(|| {
+        zipenumvariants(
+            Box::new(DotTestEvents::iter()),
+            Box::new(DotTestEvents::VARIANTS.iter()),
+        )
+    });
 
     #[test]
     fn dottest_fsm_dot() {
