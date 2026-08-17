@@ -1,7 +1,7 @@
 [package]
 name = "extfsm"
 description="Extended Finite State Machine with internal event queue and entry/exit transitions"
-version = "0.13.1"
+version = "0.14.0"
 authors = ["prz@juniper.net <prz@juniper.net>"]
 readme = "README.md"
 keywords = [ "fsm", "state", "state-machine" ]
@@ -12,16 +12,16 @@ edition = "2024"
 
 [dependencies]
 slog="~2"
-uuid = { version = "~0.8", features = ["v4"] }
-itertools = "~0.10"
+uuid = { version = "1", features = ["v4"] }
+itertools = "0.15"
 lazy_static = "~1"
-dot="~0.1"
+dot = "0.2"
 strum = "0.28.0"
 strum_macros = "0.28.0"
 
 [dev-dependencies]
 slog-term="~2"
-slog-atomic="~2"
+slog-atomic = "3"
 slog-async="~2"
 
 [features]

@@ -1,3 +1,16 @@
+Version 0.14
+============
+
+* updated dependencies to current releases:
+  * `dot` `0.1` -> `0.2` (this is visible in the public API since `extfsm` implements
+    `dot::GraphWalk` and `dot::Labeller` for its graph types)
+  * `uuid` `0.8` -> `1`
+  * `itertools` `0.10` -> `0.15` (deprecated `group_by` replaced by `chunk_by`)
+  * `slog-atomic` `2` -> `3` (dev dependency)
+* builds warning free: all `clippy` and `rustdoc` warnings addressed
+* introduced `SharedTransitionTable`/`SharedEntryExitTransitionTable` internal type
+  aliases to simplify the FSM type signatures
+
 Version 0.7
 ===========
 * breaks API from 0.6 making the addition of transition more of a 'stacked' API where 

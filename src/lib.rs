@@ -31,7 +31,7 @@
 //! This code is not an official Juniper product.
 //! You may obtain a copy of the License at
 //!
-//! http://www.apache.org/licenses/LICENSE-2.0
+//! <http://www.apache.org/licenses/LICENSE-2.0>
 //!
 //! Unless required by applicable law or agreed to in writing, software
 //! distributed under the License is distributed on an "AS IS" BASIS,
@@ -39,25 +39,24 @@
 //! See the License for the specific language governing permissions and
 //! limitations under the License.
 
-use dot::LabelText;
-use itertools::Itertools;
-use slog::{Logger, debug};
 use std::cell::{Ref, RefCell, RefMut};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::default::Default;
 use std::fmt::Debug;
-use std::fs;
 use std::hash::Hash;
-use std::io;
 use std::iter::Iterator;
 use std::mem::swap;
 use std::rc::Rc;
-use uuid::Uuid;
+use std::{fs, io};
 
+use dot::LabelText;
+use itertools::Itertools;
 use lazy_static::lazy_static;
+use slog::{Logger, debug};
 use strum::{IntoEnumIterator, VariantNames};
 use strum_macros::{EnumIter, VariantNames};
+use uuid::Uuid;
 
 /// types of transitions on states
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -144,7 +143,7 @@ pub type EntryExitTransitionFn<
 /// # Template parameters
 ///
 ///  * `ExtendedState` - provides a structure that every transition can access and
-///                      stores extended state
+///    stores extended state
 ///  * `TransitionFnArguments` - type that can be boxed as parameters to an event instance
 ///  * `ErrorType` - Errors that transitions can generate internally
 pub struct FSM<
@@ -163,27 +162,19 @@ pub struct FSM<
     start_state: StateType,
     current_state: StateType,
     event_queue: EventQueue<EventType, TransitionFnArguments>,
-    transitions: Rc<
-        RefCell<
-            TransitionTable<
-                ExtendedState,
-                StateType,
-                EventType,
-                TransitionFnArguments,
-                ErrorType,
-            >,
-        >,
+    transitions: SharedTransitionTable<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
     >,
-    statetransitions: Rc<
-        RefCell<
-            EntryExitTransitionTable<
-                ExtendedState,
-                StateType,
-                EventType,
-                TransitionFnArguments,
-                ErrorType,
-            >,
-        >,
+    statetransitions: SharedEntryExitTransitionTable<
+        ExtendedState,
+        StateType,
+        EventType,
+        TransitionFnArguments,
+        ErrorType,
     >,
 
     /// optional logger, do not provide if performance becomes a problem on complex logging
@@ -226,9 +217,9 @@ where
         target: StateType,
     ) -> DotEdgeKey<StateType> {
         DotEdgeKey::TransitionsSet(ColorGroupedTransitions {
-            color: color,
-            source: source,
-            target: target,
+            color,
+            source,
+            target,
         })
     }
 
@@ -283,9 +274,9 @@ where
 }
 
 /// color can be translated into its name
-impl Into<&'static &'static str> for DotColor {
-    fn into(self) -> &'static &'static str {
-        COLORS.get(&self).expect("dot color cannot be translated")
+impl From<DotColor> for &'static &'static str {
+    fn from(val: DotColor) -> Self {
+        COLORS.get(&val).expect("dot color cannot be translated")
     }
 }
 
@@ -315,10 +306,7 @@ impl<StateType: Clone + Sized + Eq + Hash> DotNodeKey<StateType> {
         entryexit: Option<EntryExit>,
         state: StateType,
     ) -> DotNodeKey<StateType> {
-        DotNodeKey {
-            entryexit: entryexit,
-            state: state,
-        }
+        DotNodeKey { entryexit, state }
     }
 }
 
@@ -388,12 +376,10 @@ where
                         Some(eek.entryexit.clone()),
                         eek.state.clone(),
                     )
+                } else if self.statetransitions.borrow().contains_key(eek) {
+                    DotNodeKey::new(None, eek.state.clone())
                 } else {
-                    if let Some(_) = self.statetransitions.borrow().get(eek) {
-                        DotNodeKey::new(None, eek.state.clone())
-                    } else {
-                        unreachable!();
-                    }
+                    unreachable!();
                 }
             }
             DotEdgeKey::TransitionsSet(ref tk) => {
@@ -411,12 +397,10 @@ where
                         Some(eek.entryexit.clone()),
                         eek.state.clone(),
                     )
+                } else if self.statetransitions.borrow().contains_key(eek) {
+                    DotNodeKey::new(None, eek.state.clone())
                 } else {
-                    if let Some(_) = self.statetransitions.borrow().get(eek) {
-                        DotNodeKey::new(None, eek.state.clone())
-                    } else {
-                        unreachable!();
-                    }
+                    unreachable!();
                 }
             }
 
@@ -499,7 +483,7 @@ where
         n: &DotNodeKey<StateType>,
     ) -> dot::LabelText<'b> {
         match self.dotgraph.borrow().nodes.get(n) {
-            Some(ref realnode) => {
+            Some(realnode) => {
                 dot::LabelText::LabelStr(realnode.label.clone().into())
             }
             None => unreachable!(),
@@ -736,7 +720,7 @@ where
     ///   * `filename` - optional filename
     ///   * `state2name, event2name` - states to human readable name translations
     ///   * `omitstates, omitevents` - any transition starting/stopping on those states and
-    ///                                the given events will be omitted from the representation
+    ///     the given events will be omitted from the representation
     pub fn dotfile(
         &self,
         filename: Option<String>,
@@ -746,7 +730,7 @@ where
         omitevents: Option<&HashSet<EventType>>,
     ) -> Result<(), io::Error> {
         let fileattempt = if let Some(fname) = filename {
-            fs::File::create(fname).map(|f| Some(f))
+            fs::File::create(fname).map(Some)
         } else {
             Ok(None)
         };
@@ -755,14 +739,14 @@ where
             omitstates: &Option<&HashSet<ST>>,
             n: &ST,
         ) -> bool {
-            omitstates.map_or(false, |os| os.contains(n))
+            omitstates.is_some_and(|os| os.contains(n))
         }
 
         fn omitevent<EV: Eq + Hash>(
             omitevents: &Option<&HashSet<EV>>,
             n: &EV,
         ) -> bool {
-            omitevents.map_or(false, |os| os.contains(n))
+            omitevents.is_some_and(|os| os.contains(n))
         }
 
         if let Ok(maybef) = fileattempt {
@@ -792,9 +776,9 @@ where
                         dotgraphwork.nodes.insert(
                             key.clone(),
                             DotNode {
-                                key: key,
+                                key,
                                 id: Uuid::new_v4(),
-                                shape: shape,
+                                shape,
                                 style: dot::Style::None,
                                 label: String::from(
                                     **state2name.get(n).unwrap_or(&&"?"),
@@ -817,11 +801,11 @@ where
                             match self.statetransitions.borrow().get(&eek) {
                                 None => {}
                                 Some(st) => {
-                                    let label = match t {
-                                        &EntryExit::EntryTransition => {
+                                    let label = match *t {
+                                        EntryExit::EntryTransition => {
                                             "Enter".into()
                                         }
-                                        &EntryExit::ExitTransition => {
+                                        EntryExit::ExitTransition => {
                                             "Exit".into()
                                         }
                                     };
@@ -832,7 +816,7 @@ where
                                     dotgraphwork.nodes.insert(
                                         key.clone(),
                                         DotNode {
-                                            key: key,
+                                            key,
                                             id: Uuid::new_v4(),
                                             shape: Some(String::from("plain")),
                                             style: if st.is_visible() {
@@ -840,7 +824,7 @@ where
                                             } else {
                                                 dot::Style::Invisible
                                             },
-                                            label: label,
+                                            label,
                                         },
                                     );
                                 }
@@ -861,8 +845,7 @@ where
                     .sorted_by(|&(_, e1t), &(_, e2t)| {
                         e1t.endstate.cmp(&e2t.endstate)
                     })
-                    .into_iter()
-                    .group_by(|&(_, to)| to.endstate.clone())
+                    .chunk_by(|&(_, to)| to.endstate.clone())
                     .into_iter()
                     .filter(|(tgt, _)| !omitstate(&omitstates, tgt))
                 {
@@ -871,11 +854,10 @@ where
                         .filter(|e1| !omitevent(&omitevents, &e1.0.event))
                         .sorted_by(|e1, e2| match e1.0.state.cmp(&e2.0.state) {
                             Ordering::Equal => e1.0.event.cmp(&e2.0.event),
-                            v @ _ => v,
+                            v => v,
                         })
-                        .into_iter()
                         // group them by state
-                        .group_by(|&(from, _)| from.state.clone())
+                        .chunk_by(|&(from, _)| from.state.clone())
                         .into_iter()
                         .filter(|(src, _)| !omitstate(&omitstates, src))
                     {
@@ -886,9 +868,8 @@ where
                             .sorted_by(|&(_, e1t), &(_, e2t)| {
                                 e1t.color.cmp(&e2t.color)
                             })
-                            .into_iter()
                             .filter(|&(_, to)| to.is_visible())
-                            .group_by(|&(_, to)| to.color)
+                            .chunk_by(|&(_, to)| to.color)
                             .into_iter()
                         {
                             // we have source,target and color grouped, each of them generates one
@@ -903,7 +884,7 @@ where
                             dotgraphwork.edges.insert(
                                 key.clone(),
                                 DotEdge {
-                                    key: key,
+                                    key,
                                     style: dot::Style::None,
                                     label: pertargetsourcecolor
                                         .into_iter()
@@ -912,7 +893,7 @@ where
                                                 "{}|{}|",
                                                 dest.name
                                                     .as_ref()
-                                                    .map(|n| if n.len() > 0 {
+                                                    .map(|n| if !n.is_empty() {
                                                         format!("{}\n", n)
                                                     } else {
                                                         "".into()
@@ -925,7 +906,7 @@ where
                                         })
                                         .collect::<Vec<_>>()
                                         .join("\n"),
-                                    color: color,
+                                    color,
                                 },
                             );
                         }
@@ -946,7 +927,7 @@ where
                     dotgraphwork.edges.insert(
                         key.clone(),
                         DotEdge {
-                            key: key,
+                            key,
                             style: dot::Style::None,
                             label: tv
                                 .get_name()
@@ -987,10 +968,7 @@ impl<StateType, EventType> TransitionSource<StateType, EventType> {
         state: StateType,
         event: EventType,
     ) -> TransitionSource<StateType, EventType> {
-        TransitionSource {
-            state: state,
-            event: event,
-        }
+        TransitionSource { state, event }
     }
     /// read state
     pub fn state(&self) -> &StateType {
@@ -1079,7 +1057,7 @@ impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
     /// create a transition target
     ///   * `endstate` - state resulting after correct transition
     ///   * `transfn`  - transition as a boxed function taking in extended state,
-    /// 				 event and possible arguments
+    ///     event and possible arguments
     pub fn new(
         endstate: StateType,
         transfn: Box<
@@ -1093,8 +1071,8 @@ impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
         >,
     ) -> Self {
         TransitionTarget {
-            endstate: endstate,
-            transfn: transfn,
+            endstate,
+            transfn,
             name: None,
             description: None,
             visible: true,
@@ -1214,7 +1192,7 @@ impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
         >,
     ) -> Self {
         EntryExitTransition {
-            transfn: transfn,
+            transfn,
             name: None,
             description: None,
             color: DotColor::black,
@@ -1264,6 +1242,44 @@ impl<ExtendedState, StateType, EventType, TransitionFnArguments, ErrorType>
 }
 
 /// map for state entry/exit transitions
+/// Shared, interior-mutable handle to a [`TransitionTable`].
+type SharedTransitionTable<
+    ExtendedState,
+    StateType,
+    EventType,
+    TransitionFnArguments,
+    ErrorType,
+> = Rc<
+    RefCell<
+        TransitionTable<
+            ExtendedState,
+            StateType,
+            EventType,
+            TransitionFnArguments,
+            ErrorType,
+        >,
+    >,
+>;
+
+/// Shared, interior-mutable handle to an [`EntryExitTransitionTable`].
+type SharedEntryExitTransitionTable<
+    ExtendedState,
+    StateType,
+    EventType,
+    TransitionFnArguments,
+    ErrorType,
+> = Rc<
+    RefCell<
+        EntryExitTransitionTable<
+            ExtendedState,
+            StateType,
+            EventType,
+            TransitionFnArguments,
+            ErrorType,
+        >,
+    >,
+>;
+
 type EntryExitTransitionTable<
     ExtendedState,
     StateType,
@@ -1348,7 +1364,7 @@ where
                 let transitions = self.transitions.borrow();
                 let transition =
                     transitions.get(&TransitionSource::new(state.clone(), event.clone()));
-                let ref mut q = self.event_queue;
+                let q = &mut self.event_queue;
                 let name = &self.name;
 
                 if let Some(ref l) = self.log {
@@ -1356,6 +1372,7 @@ where
                 }
 
                 // play the entry, exit transition draining the event queues if necessary
+                #[allow(clippy::too_many_arguments)]
                 fn entryexit<
                     ExtendedState,
                     EventType,
@@ -1391,9 +1408,9 @@ where
                         entryexit: direction,
                     }) {
                         None => Errors::OK,
-                        Some(ref entryexittrans) => {
-                            let ref func = entryexittrans.transfn;
-                            let ref tname = entryexittrans.get_name();
+                        Some(entryexittrans) => {
+                            let func = &entryexittrans.transfn;
+                            let tname = &entryexittrans.get_name();
 
                             if let Some(ref l) = log {
                                 debug!(
@@ -1503,10 +1520,7 @@ where
                 }
                 // check for any errors in the whole transitions of the queue
             })
-            .filter(|e| match *e {
-                Errors::OK => false,
-                _ => true,
-            })
+            .filter(|e| !matches!(*e, Errors::OK))
             .take(1)
             .collect::<Vec<_>>(); // try to get first error out if any
 
@@ -1540,19 +1554,15 @@ mod tests {
     // extern crate strum;
     // extern crate strum_macros;
 
-    use lazy_static::lazy_static;
-    use strum::{IntoEnumIterator, VariantNames};
-    use strum_macros::{EnumIter, VariantNames};
-
+    use std::borrow::Borrow;
     use std::cell::RefMut;
     use std::collections::HashMap;
 
+    use lazy_static::lazy_static;
     use slog::*;
-    use slog_async::*;
     use slog_atomic::*;
-    use slog_term::*;
-    use std;
-    use std::borrow::Borrow;
+    use strum::{IntoEnumIterator, VariantNames};
+    use strum_macros::{EnumIter, VariantNames};
 
     use super::{
         Annotated, DotColor, EntryExit, EntryExitTransition, Errors, FSM,
@@ -1916,7 +1926,7 @@ mod tests {
     fn coin_machine_dot() {
         let still_fsm = build_coin_fsm();
 
-        for fname in vec![None, Some("target/tmp.dot".into())] {
+        for fname in [None, Some("target/tmp.dot".into())] {
             still_fsm
                 .dotfile(
                     fname,
@@ -2203,7 +2213,7 @@ mod tests {
     fn dottest_fsm_dot() {
         let dottest_fsm = build_dottest_fsm();
 
-        for fname in vec![None, Some("target/dottest.dot".into())] {
+        for fname in [None, Some("target/dottest.dot".into())] {
             dottest_fsm
                 .dotfile(
                     fname,
